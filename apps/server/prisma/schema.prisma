@@ -1,0 +1,344 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Language {
+  AM
+  EN
+}
+
+enum UserRole {
+  PLAYER
+  CASHIER
+  SUPER_ADMIN
+}
+
+enum TxType {
+  DEPOSIT
+  WITHDRAW_LOCK
+  WITHDRAW_PAID
+  WITHDRAW_REFUND
+  TRANSFER_OUT
+  TRANSFER_IN
+  BET
+  BET_REFUND
+  WIN
+  WELCOME_BONUS
+  REFERRAL_BONUS
+  ADMIN_ADJUSTMENT
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum WithdrawStatus {
+  PENDING
+  PAID
+  REJECTED
+}
+
+enum ReferralTriggerType {
+  ON_SIGNUP_VERIFIED
+  ON_FIRST_DEPOSIT
+  ON_EVERY_DEPOSIT_PERCENT
+  ON_EVERY_BET_PERCENT
+}
+
+enum RoomMode {
+  AUTO
+  MANUAL
+}
+
+enum WinningPattern {
+  ONE_LINE
+  TWO_LINES
+  FOUR_CORNERS
+  X_SHAPE
+  FULL_HOUSE
+}
+
+enum GameRoundStatus {
+  WAITING
+  COUNTDOWN
+  RUNNING
+  CLAIM_WINDOW
+  FINISHED
+  CANCELLED_REFUNDED
+}
+
+enum TicketStatus {
+  ACTIVE
+  BURNED_FALSE_CLAIM
+  WINNER
+  REFUNDED
+}
+
+model User {
+  id                  String    @id @default(cuid())
+  telegramId          BigInt    @unique
+  phoneNumber         String?   @unique
+  firstName           String
+  lastName            String?
+  username            String?
+  language            Language?
+  role                UserRole  @default(PLAYER)
+  passwordHash        String?
+  isBanned            Boolean   @default(false)
+  referralCode        String    @unique
+  referredById        String?
+  welcomeBonusClaimed Boolean   @default(false)
+  botState            Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  referredBy        User?               @relation("UserReferrals", fields: [referredById], references: [id])
+  referrals         User[]              @relation("UserReferrals")
+  wallet            Wallet?
+  transactions      WalletTransaction[]
+  depositRequests   DepositRequest[]    @relation("UserDeposits")
+  reviewedDeposits  DepositRequest[]    @relation("ReviewedDeposits")
+  withdrawRequests  WithdrawRequest[]   @relation("UserWithdrawals")
+  reviewedWithdraws WithdrawRequest[]   @relation("ReviewedWithdrawals")
+  sentTransfers     WalletTransfer[]    @relation("SentTransfers")
+  receivedTransfers WalletTransfer[]    @relation("ReceivedTransfers")
+  tickets           GameTicket[]
+  otpCodes          AdminOtpCode[]
+  auditLogs         AuditLog[]
+
+  @@index([role])
+  @@index([referredById])
+}
+
+model Wallet {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  balance       Decimal  @default(0) @db.Decimal(12, 2)
+  lockedBalance Decimal  @default(0) @db.Decimal(12, 2)
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model WalletTransaction {
+  id            String   @id @default(cuid())
+  userId        String
+  type          TxType
+  amount        Decimal  @db.Decimal(12, 2)
+  balanceAfter  Decimal  @db.Decimal(12, 2)
+  referenceType String?
+  referenceId   String?
+  actorId       String?
+  note          String?
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+}
+
+model WalletTransfer {
+  id         String   @id @default(cuid())
+  senderId   String
+  receiverId String
+  amount     Decimal  @db.Decimal(12, 2)
+  note       String?
+  createdAt  DateTime @default(now())
+
+  sender   User @relation("SentTransfers", fields: [senderId], references: [id])
+  receiver User @relation("ReceivedTransfers", fields: [receiverId], references: [id])
+
+  @@index([senderId, createdAt])
+  @@index([receiverId, createdAt])
+}
+
+model PaymentAccount {
+  id             String   @id @default(cuid())
+  provider       String
+  accountName    String
+  accountNumber  String
+  instructionsAm String   @default("")
+  instructionsEn String   @default("")
+  isActive       Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  deposits DepositRequest[]
+}
+
+model DepositRequest {
+  id               String        @id @default(cuid())
+  userId           String
+  paymentAccountId String
+  amount           Decimal       @db.Decimal(12, 2)
+  transactionRef   String        @unique
+  receiptText      String?
+  screenshotFileId String?
+  status           RequestStatus @default(PENDING)
+  reviewedById     String?
+  reviewNote       String?
+  adminMessageIds  Json?
+  reviewedAt       DateTime?
+  createdAt        DateTime      @default(now())
+
+  user           User           @relation("UserDeposits", fields: [userId], references: [id], onDelete: Cascade)
+  paymentAccount PaymentAccount @relation(fields: [paymentAccountId], references: [id])
+  reviewedBy     User?          @relation("ReviewedDeposits", fields: [reviewedById], references: [id])
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+}
+
+model WithdrawRequest {
+  id              String         @id @default(cuid())
+  userId          String
+  provider        String
+  accountName     String
+  accountNumber   String
+  amount          Decimal        @db.Decimal(12, 2)
+  status          WithdrawStatus @default(PENDING)
+  reviewedById    String?
+  payoutRef       String?
+  reviewNote      String?
+  adminMessageIds Json?
+  reviewedAt      DateTime?
+  createdAt       DateTime       @default(now())
+
+  user       User  @relation("UserWithdrawals", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("ReviewedWithdrawals", fields: [reviewedById], references: [id])
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+}
+
+model SystemSettings {
+  id                   Int                 @id @default(1)
+  botName              String              @default("Bingo Ethiopia")
+  welcomeBannerUrl     String              @default("")
+  supportUsername      String              @default("@BingoSupport")
+  welcomeBonusEnabled  Boolean             @default(true)
+  welcomeBonusAmount   Decimal             @default(10) @db.Decimal(12, 2)
+  referralBonusEnabled Boolean             @default(false)
+  referralTriggerType  ReferralTriggerType @default(ON_FIRST_DEPOSIT)
+  referralBonusValue   Decimal             @default(10) @db.Decimal(12, 2)
+  minDeposit           Decimal             @default(10) @db.Decimal(12, 2)
+  maxDeposit           Decimal             @default(50000) @db.Decimal(12, 2)
+  minWithdraw          Decimal             @default(50) @db.Decimal(12, 2)
+  maxWithdraw          Decimal             @default(50000) @db.Decimal(12, 2)
+  transferEnabled      Boolean             @default(true)
+  minTransfer          Decimal             @default(10) @db.Decimal(12, 2)
+  maxTransfer          Decimal             @default(10000) @db.Decimal(12, 2)
+  manualClaimWindowMs  Int                 @default(2000)
+  maintenanceMode      Boolean             @default(false)
+  updatedAt            DateTime            @updatedAt
+}
+
+model Room {
+  id                 String         @id @default(cuid())
+  nameAm             String
+  nameEn             String
+  mode               RoomMode       @default(AUTO)
+  stakeAmount        Decimal        @db.Decimal(12, 2)
+  houseCutPercent    Decimal        @default(20) @db.Decimal(5, 2)
+  minPlayers         Int            @default(2)
+  maxCartelasPerUser Int?
+  cartelaPoolSize    Int            @default(100)
+  countdownSeconds   Int            @default(30)
+  waitTimeoutSeconds Int            @default(300)
+  callIntervalMs     Int            @default(3500)
+  winningPattern     WinningPattern @default(ONE_LINE)
+  freeCenter         Boolean        @default(true)
+  isActive           Boolean        @default(true)
+  sortOrder          Int            @default(0)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  rounds GameRound[]
+
+  @@index([isActive, sortOrder])
+}
+
+model CartelaTemplate {
+  cartelaNumber Int  @id
+  grid          Json
+}
+
+model GameRound {
+  id              String          @id @default(cuid())
+  roomId          String
+  status          GameRoundStatus @default(WAITING)
+  calledNumbers   Int[]
+  shuffledDeck    Int[]
+  totalPot        Decimal         @default(0) @db.Decimal(12, 2)
+  houseCutAmount  Decimal         @default(0) @db.Decimal(12, 2)
+  prizePool       Decimal         @default(0) @db.Decimal(12, 2)
+  countdownEndsAt DateTime?
+  waitExpiresAt   DateTime?
+  startedAt       DateTime?
+  endedAt         DateTime?
+  createdAt       DateTime        @default(now())
+
+  room    Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  tickets GameTicket[]
+
+  @@index([roomId, status])
+  @@index([status, createdAt])
+}
+
+model GameTicket {
+  id            String       @id @default(cuid())
+  gameRoundId   String
+  userId        String
+  cartelaNumber Int
+  status        TicketStatus @default(ACTIVE)
+  pricePaid     Decimal      @db.Decimal(12, 2)
+  prizeWon      Decimal      @default(0) @db.Decimal(12, 2)
+  purchasedAt   DateTime     @default(now())
+
+  gameRound GameRound @relation(fields: [gameRoundId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([gameRoundId, cartelaNumber])
+  @@index([gameRoundId, userId])
+  @@index([userId, purchasedAt])
+}
+
+model AdminOtpCode {
+  id        String    @id @default(cuid())
+  userId    String
+  code      String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, code])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  actorRole  UserRole
+  action     String
+  targetType String
+  targetId   String
+  beforeJson Json?
+  afterJson  Json?
+  createdAt  DateTime @default(now())
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+}
+

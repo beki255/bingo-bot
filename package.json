@@ -1,0 +1,19 @@
+{
+  "name": "bingo-bot-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel --stream dev",
+    "dev:server": "pnpm --filter @bingo/server dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter @bingo/server db:generate",
+    "db:push": "pnpm --filter @bingo/server db:push",
+    "db:seed": "pnpm --filter @bingo/server db:seed"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2"
+  }
+}
+
