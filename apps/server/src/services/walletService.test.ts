@@ -16,6 +16,7 @@ describe("wallet & onboarding integration", () => {
   const tgA = BigInt(990000001);
   const tgB = BigInt(990000002);
   const tgC = BigInt(990000003);
+  const tgAdmin = BigInt(990000009);
   let userAId = "";
   let userBId = "";
   let userCId = "";
@@ -24,12 +25,32 @@ describe("wallet & onboarding integration", () => {
 
   beforeAll(async () => {
     await prisma.user.deleteMany({
-      where: { telegramId: { in: [tgA, tgB, tgC] } },
+      where: { telegramId: { in: [tgA, tgB, tgC, tgAdmin] } },
+    });
+    await prisma.paymentAccount.deleteMany({
+      where: { provider: "__TEST_TELEBIRR__" },
     });
 
-    const admin = await prisma.user.findFirstOrThrow({ where: { role: "SUPER_ADMIN" } });
-    adminId = admin.id;
-    const pay = await prisma.paymentAccount.findFirstOrThrow({ where: { isActive: true } });
+    const testAdmin = await prisma.user.create({
+      data: {
+        telegramId: tgAdmin,
+        firstName: "TestAdmin",
+        role: "SUPER_ADMIN",
+        referralCode: `TADM_${Date.now()}`,
+        welcomeBonusClaimed: true,
+        wallet: { create: { balance: 0 } },
+      },
+    });
+    adminId = testAdmin.id;
+
+    const pay = await prisma.paymentAccount.create({
+      data: {
+        provider: "__TEST_TELEBIRR__",
+        accountName: "Test Pay",
+        accountNumber: "0999999999",
+        isActive: true,
+      },
+    });
     payAccId = pay.id;
 
     const uA = await findOrCreateTelegramUser({ telegramId: tgA, firstName: "TesterA" });
@@ -42,11 +63,13 @@ describe("wallet & onboarding integration", () => {
 
   afterAll(async () => {
     await prisma.depositRequest.deleteMany({ where: { userId: { in: [userAId, userBId, userCId] } } });
+    await prisma.auditLog.deleteMany({ where: { actorId: adminId } });
     await prisma.walletTransfer.deleteMany({
       where: { OR: [{ senderId: userAId }, { receiverId: userBId }] },
     });
+    await prisma.paymentAccount.deleteMany({ where: { id: payAccId } });
     await prisma.user.deleteMany({
-      where: { telegramId: { in: [tgA, tgB, tgC] } },
+      where: { telegramId: { in: [tgA, tgB, tgC, tgAdmin] } },
     });
     await prisma.$disconnect();
   });

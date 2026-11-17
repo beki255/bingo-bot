@@ -11,9 +11,12 @@ export const env = {
   databaseUrl: process.env.DATABASE_URL || "",
   botToken: (process.env.BOT_TOKEN || "").trim(),
   botUsername: (process.env.BOT_USERNAME || "").trim(),
-  botName: (process.env.BOT_NAME || "Bingo Ethiopia").trim(),
-  welcomeBannerUrl: (process.env.WELCOME_BANNER_URL || "").trim(),
-  supportUsername: (process.env.SUPPORT_USERNAME || "@BingoSupport").trim(),
+  botName: (process.env.BOT_NAME || "Tunnel Bingo").trim(),
+  welcomeBannerUrl: (
+    process.env.WELCOME_BANNER_URL ||
+    "C:/Users/HP/.gemini/antigravity/brain/b8354e76-8edb-40b0-94af-9082a031ac7b/.user_uploaded/media_1794577990868_53b7b1d7.jpg"
+  ).trim(),
+  supportUsername: (process.env.SUPPORT_USERNAME || "").trim(),
   miniAppUrl: process.env.MINI_APP_URL || "http://localhost:5173",
   adminWebUrl: process.env.ADMIN_WEB_URL || "http://localhost:5174",
   adminJwtSecret: process.env.ADMIN_JWT_SECRET || "dev_fallback_secret_change_in_prod",

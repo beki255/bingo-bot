@@ -66,12 +66,32 @@ export async function findOrCreateTelegramUser(input: {
   username?: string;
   referralCodeUsed?: string;
 }) {
+  let referredById: string | null = null;
+  if (input.referralCodeUsed) {
+    const rawRef = input.referralCodeUsed.trim();
+    const referrer = /^\d+$/.test(rawRef)
+      ? await prisma.user.findUnique({
+          where: { telegramId: BigInt(rawRef) },
+          select: { id: true, telegramId: true, isBanned: true },
+        })
+      : await prisma.user.findUnique({
+          where: { referralCode: rawRef.toUpperCase() },
+          select: { id: true, telegramId: true, isBanned: true },
+        });
+    if (referrer && !referrer.isBanned && referrer.telegramId !== input.telegramId) {
+      referredById = referrer.id;
+    }
+  }
+
   const existing = await prisma.user.findUnique({
     where: { telegramId: input.telegramId },
     include: { wallet: true },
   });
   if (existing) {
+    const shouldAttachReferrer =
+      !existing.referredById && !existing.phoneNumber && referredById && referredById !== existing.id;
     if (
+      shouldAttachReferrer ||
       existing.firstName !== input.firstName ||
       existing.lastName !== (input.lastName ?? null) ||
       existing.username !== (input.username ?? null)
@@ -82,22 +102,12 @@ export async function findOrCreateTelegramUser(input: {
           firstName: input.firstName,
           lastName: input.lastName ?? null,
           username: input.username ?? null,
+          ...(shouldAttachReferrer ? { referredById } : {}),
         },
         include: { wallet: true },
       });
     }
     return existing;
-  }
-
-  let referredById: string | null = null;
-  if (input.referralCodeUsed) {
-    const referrer = await prisma.user.findUnique({
-      where: { referralCode: input.referralCodeUsed.trim().toUpperCase() },
-      select: { id: true, isBanned: true },
-    });
-    if (referrer && !referrer.isBanned) {
-      referredById = referrer.id;
-    }
   }
 
   for (let attempt = 0; attempt < 5; attempt++) {

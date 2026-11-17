@@ -116,20 +116,37 @@ export async function processReferralBonusTx(
   if (!referrer || referrer.isBanned) return null;
 
   const valueNum = Number(settings.referralBonusValue);
+  const targetCount = 10;
   let bonusCents = 0;
+  let refType = String(params.trigger);
+  let refId = params.referenceId ?? referredUser.id;
+  let txNote = `Referral bonus (${params.trigger})`;
 
   if (params.trigger === "ON_SIGNUP_VERIFIED") {
     if (!referredUser.phoneNumber) return null;
+    const verifiedInviteCount = await tx.user.count({
+      where: {
+        referredById: referrer.id,
+        phoneNumber: { not: null },
+      },
+    });
+    if (verifiedInviteCount === 0 || verifiedInviteCount % targetCount !== 0) {
+      return null;
+    }
+    const milestoneRef = `MILESTONE_${verifiedInviteCount}`;
     const already = await tx.walletTransaction.findFirst({
       where: {
         userId: referrer.id,
         type: "REFERRAL_BONUS",
-        referenceType: "REFERRAL_SIGNUP",
-        referenceId: referredUser.id,
+        referenceType: "REFERRAL_MILESTONE",
+        referenceId: milestoneRef,
       },
     });
     if (already) return null;
     bonusCents = Math.round(valueNum * 100);
+    refType = "REFERRAL_MILESTONE";
+    refId = milestoneRef;
+    txNote = `Referral milestone bonus (${verifiedInviteCount} invites)`;
   } else if (params.trigger === "ON_FIRST_DEPOSIT") {
     const approvedCount = await tx.depositRequest.count({
       where: { userId: referredUser.id, status: "APPROVED" },
@@ -157,10 +174,9 @@ export async function processReferralBonusTx(
       type: "REFERRAL_BONUS",
       amount: centsToDecimal(bonusCents),
       balanceAfter: centsToDecimal(newBalanceCents),
-      referenceType:
-        params.trigger === "ON_SIGNUP_VERIFIED" ? "REFERRAL_SIGNUP" : params.trigger,
-      referenceId: params.referenceId ?? referredUser.id,
-      note: `Referral bonus (${params.trigger})`,
+      referenceType: refType,
+      referenceId: refId,
+      note: txNote,
     },
   });
 
