@@ -644,3 +644,70 @@ export async function adminAdjustWallet(
   });
 }
 
+export async function deductBetTx(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  amount: number,
+  roundId: string
+) {
+  const cents = toCents(amount);
+  const wallet = await lockAndGetWallet(tx, userId);
+  const currentCents = toCents(wallet.balance);
+  if (currentCents < cents) {
+    throw new Error("INSUFFICIENT_BALANCE");
+  }
+  const nextCents = currentCents - cents;
+  const balanceAfter = centsToDecimal(nextCents);
+
+  await tx.wallet.update({
+    where: { userId },
+    data: { balance: balanceAfter },
+  });
+
+  await tx.walletTransaction.create({
+    data: {
+      userId,
+      type: "BET",
+      amount: centsToDecimal(cents),
+      balanceAfter,
+      referenceType: "GAME_ROUND",
+      referenceId: roundId,
+      note: `Game bet in round ${roundId}`,
+    },
+  });
+
+  return balanceAfter;
+}
+
+export async function creditWinTx(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  amount: number,
+  roundId: string
+) {
+  const cents = toCents(amount);
+  const wallet = await lockAndGetWallet(tx, userId);
+  const currentCents = toCents(wallet.balance);
+  const nextCents = currentCents + cents;
+  const balanceAfter = centsToDecimal(nextCents);
+
+  await tx.wallet.update({
+    where: { userId },
+    data: { balance: balanceAfter },
+  });
+
+  await tx.walletTransaction.create({
+    data: {
+      userId,
+      type: "WIN",
+      amount: centsToDecimal(cents),
+      balanceAfter,
+      referenceType: "GAME_ROUND",
+      referenceId: roundId,
+      note: `Bingo prize in round ${roundId}`,
+    },
+  });
+
+  return balanceAfter;
+}
+

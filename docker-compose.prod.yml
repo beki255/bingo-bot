@@ -1,0 +1,45 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bingo_prod_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bingo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bingo_secure_pass_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-bingo_db}
+    volumes:
+      - bingo_prod_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bingo} -d ${POSTGRES_DB:-bingo_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - bingo_network
+
+  bingo_server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bingo_prod_server
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-bingo}:${POSTGRES_PASSWORD:-bingo_secure_pass_2026}@postgres:5432/${POSTGRES_DB:-bingo_db}?schema=public
+      PORT: 3001
+      NODE_ENV: production
+    ports:
+      - "3001:3001"
+    networks:
+      - bingo_network
+
+volumes:
+  bingo_prod_pgdata:
+
+networks:
+  bingo_network:
+    driver: bridge

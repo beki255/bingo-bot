@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: radial-gradient(circle at 50% 0%, #201548 0%, #0d0f22 60%, #080914 100%);
+  min-height: 100vh;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Custom glowing effects matching Tunnel Bingo */
+.glow-gold-border {
+  border: 1.5px solid rgba(255, 215, 0, 0.45);
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.15), inset 0 0 15px rgba(255, 215, 0, 0.05);
+}
+
+.glow-btn-green {
+  background: linear-gradient(135deg, #00D59B 0%, #009668 100%);
+  box-shadow: 0 4px 18px rgba(0, 213, 155, 0.35);
+}
+
+.glow-btn-blue {
+  background: linear-gradient(135deg, #2D79FF 0%, #6838FF 100%);
+  box-shadow: 0 4px 18px rgba(78, 93, 255, 0.35);
+}
+
+.glow-btn-purple {
+  background: linear-gradient(135deg, #A855F7 0%, #EC4899 100%);
+  box-shadow: 0 4px 18px rgba(168, 85, 247, 0.35);
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes toastProgress {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+.animate-slideDown {
+  animation: slideDown 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-toastProgress {
+  animation: toastProgress 3.5s linear forwards;
+}

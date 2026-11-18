@@ -1389,6 +1389,11 @@ class BotService {
         { command: "language", description: "Language / ቋንቋ ቀይር" },
         { command: "register", description: "Register / ይመዝገቡ" },
       ]);
+
+      // Keep Menu button as "commands" list so users can always access /deposit, /withdraw, /balance, /play, etc.
+      await bot.api.setChatMenuButton({
+        menu_button: { type: "commands" },
+      }).catch((err) => console.error("Failed setting chat menu button:", err));
     } catch (err) {
       console.error("Failed setting bot commands:", err);
     }

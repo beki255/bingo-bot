@@ -113,12 +113,50 @@ async function main() {
     },
   });
 
+  const existingRooms = await prisma.room.count();
+  if (existingRooms === 0) {
+    await prisma.room.createMany({
+      data: [
+        {
+          nameAm: "መደብ 10",
+          nameEn: "Play 10",
+          mode: "AUTO",
+          stakeAmount: 10,
+          houseCutPercent: 20,
+          minPlayers: 2,
+          cartelaPoolSize: 600,
+          countdownSeconds: 30,
+          waitTimeoutSeconds: 300,
+          callIntervalMs: 3500,
+          winningPattern: "ONE_LINE",
+          freeCenter: false,
+          isActive: true,
+        },
+        {
+          nameAm: "መደብ 20",
+          nameEn: "Play 20",
+          mode: "AUTO",
+          stakeAmount: 20,
+          houseCutPercent: 20,
+          minPlayers: 2,
+          cartelaPoolSize: 600,
+          countdownSeconds: 30,
+          waitTimeoutSeconds: 300,
+          callIntervalMs: 3500,
+          winningPattern: "ONE_LINE",
+          freeCenter: false,
+          isActive: true,
+        },
+      ],
+    });
+    console.log("Seeded default rooms (Play 10, Play 20).");
+  }
+
   const existingAccounts = await prisma.paymentAccount.findMany();
   const telebirrAcc = existingAccounts.find(
     (a) => a.provider.toLowerCase() === "telebirr" && a.accountNumber === "0911111111"
   );
   if (!telebirrAcc) {
-    await prisma.paymentAccount.deleteMany();
     await prisma.paymentAccount.create({
       data: {
         provider: "Telebirr",

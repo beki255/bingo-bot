@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "pnpm --parallel --stream dev",
     "dev:server": "pnpm --filter @bingo/server dev",
+    "dev:mini-app": "pnpm --filter @bingo/mini-app dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",

@@ -4,6 +4,7 @@ import { env } from "./config/env.js";
 import { prisma } from "./db/prisma.js";
 import { createApp } from "./app.js";
 import { botService } from "./bot/botService.js";
+import { gameRoundService } from "./services/gameRoundService.js";
 
 async function main() {
   await prisma.$connect();
@@ -18,6 +19,7 @@ async function main() {
   });
 
   botService.attachIO(io);
+  gameRoundService.attachIO(io);
   await botService.start();
 
   httpServer.listen(env.port, () => {
