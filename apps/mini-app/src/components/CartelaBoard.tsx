@@ -6,6 +6,9 @@ interface CartelaBoardProps {
   stake: number;
   roomName: string;
   userBalance?: number;
+  minPlayers?: number;
+  countdownSeconds?: number;
+  cartelaPoolSize?: number;
   onBack: () => void;
   onDeductBalance?: (amount: number) => void;
   onConfirmPlay?: (userCards: number[], allRegisteredCards: number[]) => void;
@@ -15,6 +18,9 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
   stake,
   roomName,
   userBalance = 0,
+  minPlayers = 2,
+  countdownSeconds = 30,
+  cartelaPoolSize = 600,
   onBack,
   onDeductBalance,
   onConfirmPlay,
@@ -24,9 +30,9 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
   const [registeredCards, setRegisteredCards] = useState<number[]>([]);
   const [previewCardNumber, setPreviewCardNumber] = useState<number | null>(null);
 
-  // Real business logic: countdown only starts when at least 3 cards/players are registered
+  // Countdown starts when at least minPlayers cards are registered
   const [isCountdownRunning, setIsCountdownRunning] = useState(false);
-  const [countdown, setCountdown] = useState(45);
+  const [countdown, setCountdown] = useState(countdownSeconds);
 
   // Toast notification state for insufficient balance
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -132,14 +138,14 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     const userCards = [...selectedCards];
     setLockedUserCards(userCards);
 
-    // 3. Room 3-player threshold business logic:
-    // When players join, meet the 3-card minimum to start countdown
+    // 3. Room minPlayers threshold business logic:
+    // When players join, meet the minPlayers minimum to start countdown
     let allCards = [...registeredCards, ...userCards];
-    if (allCards.length < 3) {
-      const needed = 3 - allCards.length;
+    if (allCards.length < minPlayers) {
+      const needed = minPlayers - allCards.length;
       const otherCards: number[] = [];
       while (otherCards.length < needed) {
-        const randomCard = Math.floor(Math.random() * 600) + 1;
+        const randomCard = Math.floor(Math.random() * cartelaPoolSize) + 1;
         if (!allCards.includes(randomCard) && !otherCards.includes(randomCard)) {
           otherCards.push(randomCard);
         }
@@ -149,15 +155,15 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
 
     setRegisteredCards(allCards);
     setIsCountdownRunning(true);
-    setCountdown(45);
+    setCountdown(countdownSeconds);
   };
 
   const handleEnterAsSpectator = () => {
     let allCards = [...registeredCards];
-    if (allCards.length < 3) {
+    if (allCards.length < minPlayers) {
       const otherCards: number[] = [];
-      while (otherCards.length < 3) {
-        const randomCard = Math.floor(Math.random() * 600) + 1;
+      while (otherCards.length < minPlayers) {
+        const randomCard = Math.floor(Math.random() * cartelaPoolSize) + 1;
         if (!allCards.includes(randomCard) && !otherCards.includes(randomCard)) {
           otherCards.push(randomCard);
         }
@@ -251,24 +257,24 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
         {/* Countdown / Waiting Status */}
         <div className="bg-[#24211a] rounded-lg py-1 px-2 flex flex-col items-center justify-center border border-amber-500/40 shadow-[0_0_10px_rgba(255,215,0,0.15)]">
           <span className="text-xs font-black text-amber-400 tracking-wider">
-            {isCountdownRunning ? `${countdown} s` : `⏳ ${registeredCards.length}/3`}
+            {isCountdownRunning ? `${countdown} s` : `⏳ ${registeredCards.length}/${minPlayers}`}
           </span>
         </div>
       </div>
 
-      {/* Threshold Status Banner (when waiting for 3 cards) */}
+      {/* Threshold Status Banner (when waiting for minPlayers cards) */}
       {!isCountdownRunning && (
         <div className="px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/20 text-center">
           <span className="text-[11px] font-bold text-amber-300">
-            ⏳ ቆጣሪው እንዲጀምር ቢያንስ 3 ካርቴላዎች መመረጥ አለባቸው ({registeredCards.length}/3 ተመርጧል)
+            ⏳ ቆጣሪው እንዲጀምር ቢያንስ {minPlayers} ካርቴላዎች መመረጥ አለባቸው ({registeredCards.length}/${minPlayers} ተመርጧል)
           </span>
         </div>
       )}
 
-      {/* 600 Cartela Selection Grid (8 Columns Scrollable) */}
+      {/* Cartela Selection Grid (8 Columns Scrollable) */}
       <div className="flex-1 overflow-y-auto px-2 py-3 bg-[#0a0c1b]/60">
         <div className="grid grid-cols-8 gap-1.5">
-          {Array.from({ length: 600 }, (_, i) => i + 1).map((num) => {
+          {Array.from({ length: cartelaPoolSize }, (_, i) => i + 1).map((num) => {
             const isTaken = takenCardsSet.has(num);
             const isSelected = selectedCards.includes(num);
             const isLocked = lockedUserCards.includes(num);
@@ -353,7 +359,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
             <span>
               {selectedCards.length > 0
                 ? `ካርቴላ አረጋግጥ (${selectedCards.length} ካርድ • ${totalCost} ETB)`
-                : "ካርቴላ ይምረጡ (ከ1-600)"}
+                : `ካርቴላ ይምረጡ (ከ1-${cartelaPoolSize})`}
             </span>
           </button>
         )}

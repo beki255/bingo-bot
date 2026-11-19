@@ -14,6 +14,14 @@ interface Room {
   nameAm: string;
   nameEn: string;
   stakeAmount: number;
+  houseCutPercent?: number;
+  minPlayers?: number;
+  countdownSeconds?: number;
+  callIntervalMs?: number;
+  cartelaPoolSize?: number;
+  freeCenter?: boolean;
+  winningPattern?: string;
+  sortOrder?: number;
 }
 
 export default function App() {
@@ -145,6 +153,9 @@ export default function App() {
       {activeTab === "game" && selectedRoom && playingCards !== null ? (
         <LiveGame
           stake={selectedRoom.stakeAmount}
+          houseCutPercent={selectedRoom.houseCutPercent ?? 20}
+          callIntervalMs={selectedRoom.callIntervalMs ?? 3500}
+          freeCenter={selectedRoom.freeCenter ?? true}
           cartelaNumbers={playingCards}
           registeredCards={registeredRoundCards}
           userBalance={userBalance}
@@ -156,9 +167,12 @@ export default function App() {
           }}
         />
       ) : activeTab === "game" && selectedRoom ? (
-        /* 2. 600 Cartela Selection Board */
+        /* 2. Cartela Selection Board */
         <CartelaBoard
           stake={selectedRoom.stakeAmount}
+          minPlayers={selectedRoom.minPlayers ?? 2}
+          countdownSeconds={selectedRoom.countdownSeconds ?? 30}
+          cartelaPoolSize={selectedRoom.cartelaPoolSize ?? 600}
           roomName={userLang === "AM" ? selectedRoom.nameAm || selectedRoom.nameEn : selectedRoom.nameEn || selectedRoom.nameAm}
           userBalance={userBalance}
           onBack={handleBackToLobby}

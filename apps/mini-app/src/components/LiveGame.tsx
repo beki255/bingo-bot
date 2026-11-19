@@ -16,6 +16,9 @@ interface WinnerData {
 
 interface LiveGameProps {
   stake: number;
+  houseCutPercent?: number;
+  callIntervalMs?: number;
+  freeCenter?: boolean;
   cartelaNumbers: number[];
   registeredCards: number[];
   userBalance: number;
@@ -26,6 +29,9 @@ interface LiveGameProps {
 
 export const LiveGame: React.FC<LiveGameProps> = ({
   stake,
+  houseCutPercent = 20,
+  callIntervalMs = 3500,
+  freeCenter = true,
   cartelaNumbers,
   registeredCards,
   userBalance,
@@ -41,9 +47,10 @@ export const LiveGame: React.FC<LiveGameProps> = ({
 
   // Real calculations based strictly on registered cards (NO FAKE DATA)
   const [gameId] = useState(() => "TB" + Math.floor(100000 + Math.random() * 900000));
-  const totalCardsCount = registeredCards.length > 0 ? registeredCards.length : Math.max(3, cartelaNumbers.length);
+  const totalCardsCount = registeredCards.length > 0 ? registeredCards.length : Math.max(2, cartelaNumbers.length);
   const playerCount = Math.max(1, Math.ceil(totalCardsCount / 1.2));
-  const derash = Math.floor(totalCardsCount * stake * 0.8); // 80% real prize pool
+  const houseCut = (houseCutPercent ?? 20) / 100;
+  const derash = Math.floor(totalCardsCount * stake * (1 - houseCut));
 
   // Ball calling state
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
@@ -174,10 +181,10 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     }
     deckRef.current = numbers;
 
-    // Center star is automatically FREE marked for player's cartelas
+    // Center star is automatically FREE marked for player's cartelas if freeCenter enabled
     const initMarked: Record<number, Set<string>> = {};
     cartelaNumbers.forEach((cNum) => {
-      initMarked[cNum] = new Set(["2-2"]);
+      initMarked[cNum] = freeCenter ? new Set(["2-2"]) : new Set();
     });
     setMarkedCells(initMarked);
 
@@ -186,12 +193,12 @@ export const LiveGame: React.FC<LiveGameProps> = ({
 
     intervalRef.current = setInterval(() => {
       callNextBall();
-    }, 3500);
+    }, callIntervalMs ?? 3500);
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, []);
+  }, [callIntervalMs, freeCenter]);
 
   // Stop caller once someone wins
   useEffect(() => {
@@ -208,11 +215,11 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       const next = { ...prev };
       cartelaNumbers.forEach((cNum) => {
         const grid = generateDeterministicCartela(cNum);
-        const userSet = new Set(next[cNum] || ["2-2"]);
+        const userSet = new Set(next[cNum] || (freeCenter ? ["2-2"] : []));
 
         for (let r = 0; r < 5; r++) {
           for (let c = 0; c < 5; c++) {
-            if (r === 2 && c === 2) continue; // center free
+            if (freeCenter && r === 2 && c === 2) continue; // center free
             if (grid[r][c] === currentBall.num) {
               userSet.add(`${r}-${c}`);
             }
@@ -222,12 +229,12 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       });
       return next;
     });
-  }, [currentBall, isAutomatic, cartelaNumbers, isWatchingOnly]);
+  }, [currentBall, isAutomatic, cartelaNumbers, isWatchingOnly, freeCenter]);
 
   // Check winning line pattern on a specific cartela grid
   const checkGridWin = (grid: number[][], calledSet: Set<number>): { hasWon: boolean; winningKeys: Set<string> } => {
     const isMarked = (r: number, c: number) => {
-      if (r === 2 && c === 2) return true; // Center free
+      if (freeCenter && r === 2 && c === 2) return true; // Center free
       return calledSet.has(grid[r][c]);
     };
 
@@ -340,11 +347,11 @@ export const LiveGame: React.FC<LiveGameProps> = ({
 
   const handleCellClick = (r: number, c: number, cellValue: number) => {
     if (isAutomatic || isWatchingOnly) return;
-    if (r === 2 && c === 2) return;
+    if (freeCenter && r === 2 && c === 2) return;
     if (!calledNumbers.includes(cellValue)) return;
 
     setMarkedCells((prev) => {
-      const currentSet = new Set(prev[activeCartelaNo] || ["2-2"]);
+      const currentSet = new Set(prev[activeCartelaNo] || (freeCenter ? ["2-2"] : []));
       const key = `${r}-${c}`;
       if (currentSet.has(key)) {
         currentSet.delete(key);
@@ -392,7 +399,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     }
   };
 
-  const activeMarks = markedCells[activeCartelaNo] || new Set(["2-2"]);
+  const activeMarks = markedCells[activeCartelaNo] || (freeCenter ? new Set(["2-2"]) : new Set<string>());
 
   return (
     <div className="flex flex-col h-full w-full max-w-md mx-auto text-white select-none animate-fadeIn pb-16 relative">
@@ -557,7 +564,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
               <div className="grid grid-cols-5 gap-1">
                 {cartelaGrid.map((row, rIdx) =>
                   row.map((val, cIdx) => {
-                    const isCenter = rIdx === 2 && cIdx === 2;
+                    const isCenter = freeCenter && rIdx === 2 && cIdx === 2;
                     const key = `${rIdx}-${cIdx}`;
                     const isMarked = activeMarks.has(key);
 
