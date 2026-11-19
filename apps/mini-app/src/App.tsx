@@ -81,7 +81,13 @@ export default function App() {
     if (fromUrl) {
       return fromUrl;
     }
-    return null;
+    // 3. Persistent browser session ID for multi-account testing
+    let saved = localStorage.getItem("bingo_client_tg_id");
+    if (!saved) {
+      saved = String(Math.floor(100000000 + Math.random() * 900000000));
+      localStorage.setItem("bingo_client_tg_id", saved);
+    }
+    return saved;
   };
 
   const updateBalance = (newBal: number) => {
@@ -171,6 +177,7 @@ export default function App() {
         <CartelaBoard
           roomId={selectedRoom.id}
           telegramId={getTelegramId()}
+          clientId={getTelegramId()}
           stake={selectedRoom.stakeAmount}
           minPlayers={selectedRoom.minPlayers ?? 2}
           countdownSeconds={selectedRoom.countdownSeconds ?? 30}

@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { ArrowLeft, RotateCw, Check, AlertCircle, X, Users, Eye } from "lucide-react";
+import { io, Socket } from "socket.io-client";
 import { generateDeterministicCartela, BINGO_LETTERS } from "@bingo/shared";
 import { API_BASE_URL } from "../config.js";
 
 interface CartelaBoardProps {
   roomId?: string;
   telegramId?: string | null;
+  clientId?: string | null;
   stake: number;
   roomName: string;
   userBalance?: number;
@@ -20,6 +22,7 @@ interface CartelaBoardProps {
 export const CartelaBoard: React.FC<CartelaBoardProps> = ({
   roomId,
   telegramId,
+  clientId,
   stake,
   roomName,
   userBalance = 0,
@@ -33,7 +36,9 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
   const [selectedCards, setSelectedCards] = useState<number[]>([]);
   const [lockedUserCards, setLockedUserCards] = useState<number[]>([]);
   const [registeredCards, setRegisteredCards] = useState<number[]>([]);
+  const [otherPendingSelections, setOtherPendingSelections] = useState<number[]>([]);
   const [previewCardNumber, setPreviewCardNumber] = useState<number | null>(null);
+  const [socket, setSocket] = useState<Socket | null>(null);
 
   // Countdown starts when at least minPlayers cards are registered
   const [isCountdownRunning, setIsCountdownRunning] = useState(false);
@@ -62,20 +67,67 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     return set;
   }, [registeredCards, lockedUserCards]);
 
-  // Fetch real room state from backend: strictly cards purchased by real users (NO FAKE / MOCK SELECTIONS)
+  // Cards currently being selected/clicked by other players in real-time
+  const otherPendingSet = useMemo(() => {
+    const set = new Set<number>();
+    otherPendingSelections.forEach((c) => {
+      if (!selectedCards.includes(c) && !lockedUserCards.includes(c)) {
+        set.add(c);
+      }
+    });
+    return set;
+  }, [otherPendingSelections, selectedCards, lockedUserCards]);
+
+  // Real-time WebSocket connection for instant multiplayer card selection & room state
   useEffect(() => {
     if (!roomId) return;
+    const socketUrl = API_BASE_URL || (typeof window !== "undefined" ? window.location.origin : "");
+    const s = io(socketUrl, {
+      transports: ["websocket", "polling"],
+      reconnectionAttempts: 10,
+    });
 
-    let isMounted = true;
-    const fetchRealRoomState = async () => {
+    s.on("connect", () => {
+      s.emit("join_room", { roomId, clientId });
+    });
+
+    s.on("room_state", (state: any) => {
+      if (Array.isArray(state?.takenCards)) {
+        setRegisteredCards(state.takenCards);
+      }
+      if (Array.isArray(state?.pendingSelections)) {
+        setOtherPendingSelections(state.pendingSelections);
+      }
+      if (state?.status === "COUNTDOWN") {
+        setIsCountdownRunning(true);
+        if (typeof state.countdown === "number" && state.countdown > 0) {
+          setCountdown(state.countdown);
+        }
+      } else if (state?.status === "WAITING") {
+        setIsCountdownRunning(false);
+      }
+    });
+
+    s.on("room_selections", (data: any) => {
+      if (Array.isArray(data?.pendingSelections)) {
+        setOtherPendingSelections(data.pendingSelections);
+      }
+    });
+
+    setSocket(s);
+
+    // Fallback HTTP poll every 2.5s to ensure rock-solid state synchronization
+    const pollInterval = setInterval(async () => {
       try {
         const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/state`);
         const data = await res.json();
-        if (isMounted && data.ok && data.state) {
+        if (data.ok && data.state) {
           const st = data.state;
-          // Only real taken cards from database
           if (Array.isArray(st.takenCards)) {
             setRegisteredCards(st.takenCards);
+          }
+          if (Array.isArray(st.pendingSelections)) {
+            setOtherPendingSelections(st.pendingSelections);
           }
           if (st.status === "COUNTDOWN") {
             setIsCountdownRunning(true);
@@ -87,16 +139,28 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
           }
         }
       } catch {}
-    };
-
-    fetchRealRoomState();
-    const pollInterval = setInterval(fetchRealRoomState, 2500);
+    }, 2500);
 
     return () => {
-      isMounted = false;
       clearInterval(pollInterval);
+      s.disconnect();
     };
-  }, [roomId]);
+  }, [roomId, clientId]);
+
+  // Broadcast current user's card selections immediately to other players in the room
+  useEffect(() => {
+    if (!roomId || !clientId) return;
+
+    if (socket?.connected) {
+      socket.emit("select_cards", { roomId, clientId, cards: selectedCards });
+    }
+
+    fetch(`${API_BASE_URL}/api/rooms/${roomId}/select`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId, cards: selectedCards }),
+    }).catch(() => {});
+  }, [selectedCards, roomId, clientId, socket]);
 
   // When registered cards reach minPlayers threshold, start countdown automatically
   useEffect(() => {
@@ -145,6 +209,12 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     // If card is already taken by someone else
     if (takenCardsSet.has(num)) {
       showToast(`ካርቴላ #${num} በሌላ ተጫዋች ተይዟል (Already taken)`);
+      return;
+    }
+
+    // If card is currently being selected by another player in real-time
+    if (otherPendingSet.has(num)) {
+      showToast(`ካርቴላ #${num} በሌላ ተጫዋች እየተመረጠ ነው (Selecting by another player)`);
       return;
     }
 
@@ -350,6 +420,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
         <div className="grid grid-cols-8 gap-1.5">
           {Array.from({ length: cartelaPoolSize }, (_, i) => i + 1).map((num) => {
             const isTaken = takenCardsSet.has(num);
+            const isPendingOther = otherPendingSet.has(num);
             const isSelected = selectedCards.includes(num);
             const isLocked = lockedUserCards.includes(num);
             const isPreviewing = previewCardNumber === num;
@@ -357,6 +428,8 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
             let bgClass = "bg-[#1b1f3b]/70 border border-white/10 text-gray-200 hover:border-cyan-400/50";
             if (isTaken) {
               bgClass = "bg-[#d84315] border border-[#ff5722] text-white opacity-90 cursor-not-allowed";
+            } else if (isPendingOther) {
+              bgClass = "bg-amber-600/80 border-2 border-amber-400 text-white font-extrabold shadow-[0_0_10px_rgba(251,191,36,0.6)] animate-pulse";
             } else if (isLocked || isSelected) {
               bgClass = "bg-[#00c853] border-2 border-[#69f0ae] text-black font-black shadow-[0_0_12px_rgba(0,200,83,0.6)] scale-[1.03]";
             } else if (isPreviewing) {
@@ -366,8 +439,8 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
             return (
               <button
                 key={num}
-                onClick={() => !isLocked && handleCardClick(num)}
-                disabled={isTaken || isLocked}
+                onClick={() => !isLocked && !isPendingOther && handleCardClick(num)}
+                disabled={isTaken || isLocked || isPendingOther}
                 className={`h-9 rounded-md flex items-center justify-center text-xs font-bold transition-all duration-100 ${bgClass}`}
               >
                 {num}

@@ -23,7 +23,9 @@ export function createApp() {
   );
   app.use(
     cors({
-      origin: env.corsOrigins,
+      origin: (origin, callback) => {
+        callback(null, true);
+      },
       credentials: true,
     })
   );
@@ -81,6 +83,20 @@ export function createApp() {
     }
   });
 
+  app.post("/api/rooms/:id/select", async (req, res) => {
+    try {
+      const { clientId, cards } = req.body;
+      if (!clientId) {
+        return res.status(400).json({ ok: false, error: "MISSING_CLIENT_ID" });
+      }
+      const { gameRoundService } = await import("./services/gameRoundService.js");
+      gameRoundService.setClientSelection(req.params.id, String(clientId), Array.isArray(cards) ? cards : []);
+      res.json({ ok: true, pendingSelections: gameRoundService.getPendingSelections(req.params.id) });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message || "FAILED_SELECT" });
+    }
+  });
+
   app.post("/api/rooms/:id/buy", async (req, res) => {
     try {
       const { gameRoundService } = await import("./services/gameRoundService.js");
@@ -88,9 +104,11 @@ export function createApp() {
       if (!telegramId || !cartelaNumbers || !Array.isArray(cartelaNumbers)) {
         return res.status(400).json({ ok: false, error: "INVALID_PARAMETERS" });
       }
+      const numericId = String(telegramId).replace(/\D/g, "");
+      const tgId = BigInt(numericId.length > 0 ? numericId : "999001");
       const state = await gameRoundService.buyTickets({
         roomId: req.params.id,
-        telegramId: BigInt(telegramId),
+        telegramId: tgId,
         cartelaNumbers,
       });
       res.json({ ok: true, state });

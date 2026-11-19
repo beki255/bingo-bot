@@ -88,7 +88,8 @@ async function main() {
   const httpServer = http.createServer(app);
   const io = new SocketIOServer(httpServer, {
     cors: {
-      origin: env.corsOrigins,
+      origin: "*",
+      methods: ["GET", "POST"],
       credentials: true,
     },
   });

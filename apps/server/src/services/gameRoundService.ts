@@ -69,19 +69,86 @@ export class GameRoundService {
   private io: SocketIOServer | null = null;
   private callTimers: Map<string, NodeJS.Timeout> = new Map();
   private countdownTimers: Map<string, NodeJS.Timeout> = new Map();
+  private pendingSelections: Map<string, Map<string, number[]>> = new Map();
 
   attachIO(io: SocketIOServer) {
     this.io = io;
     this.setupSocketEvents();
   }
 
+  getPendingSelections(roomId: string, excludeClientId?: string): number[] {
+    const roomMap = this.pendingSelections.get(roomId);
+    if (!roomMap) return [];
+    const list: number[] = [];
+    for (const [cId, cards] of roomMap.entries()) {
+      if (excludeClientId && cId === excludeClientId) continue;
+      list.push(...cards);
+    }
+    return Array.from(new Set(list));
+  }
+
+  setClientSelection(roomId: string, clientId: string, cards: number[]) {
+    if (!this.pendingSelections.has(roomId)) {
+      this.pendingSelections.set(roomId, new Map());
+    }
+    const roomMap = this.pendingSelections.get(roomId)!;
+    if (!cards || cards.length === 0) {
+      roomMap.delete(clientId);
+    } else {
+      roomMap.set(clientId, cards);
+    }
+    if (this.io) {
+      this.io.to(`room_${roomId}`).emit("room_selections", {
+        roomId,
+        pendingSelections: this.getPendingSelections(roomId),
+      });
+    }
+  }
+
+  removeClient(roomId: string, clientId: string) {
+    const roomMap = this.pendingSelections.get(roomId);
+    if (roomMap) {
+      roomMap.delete(clientId);
+      if (this.io) {
+        this.io.to(`room_${roomId}`).emit("room_selections", {
+          roomId,
+          pendingSelections: this.getPendingSelections(roomId),
+        });
+      }
+    }
+  }
+
   private setupSocketEvents() {
     if (!this.io) return;
     this.io.on("connection", (socket) => {
-      socket.on("join_room", async (roomId: string) => {
+      let currentRoom: string | null = null;
+      let currentClient: string = socket.id;
+
+      socket.on("join_room", async (data: any) => {
+        const roomId = typeof data === "string" ? data : data?.roomId;
+        if (!roomId) return;
+        const clientId = typeof data === "object" && data?.clientId ? data.clientId : socket.id;
+        currentRoom = roomId;
+        currentClient = clientId;
         socket.join(`room_${roomId}`);
+
         const state = await this.getRoomState(roomId);
         socket.emit("room_state", state);
+        socket.emit("room_selections", {
+          roomId,
+          pendingSelections: this.getPendingSelections(roomId),
+        });
+      });
+
+      socket.on("select_cards", (data: { roomId: string; clientId: string; cards: number[] }) => {
+        if (!data?.roomId) return;
+        this.setClientSelection(data.roomId, data.clientId || currentClient, data.cards || []);
+      });
+
+      socket.on("disconnect", () => {
+        if (currentRoom) {
+          this.removeClient(currentRoom, currentClient);
+        }
       });
     });
   }
@@ -190,6 +257,7 @@ export class GameRoundService {
       ticketsCount,
       derash,
       takenCards,
+      pendingSelections: this.getPendingSelections(roomId),
       countdown: remainingCountdown,
       calledNumbers: round.calledNumbers,
       currentBall,
@@ -215,10 +283,14 @@ export class GameRoundService {
       throw new Error("NO_CARDS_SELECTED");
     }
 
-    const user = await prisma.user.findUnique({
+    let user = await prisma.user.findUnique({
       where: { telegramId },
       include: { wallet: true },
     });
+    if (!user) {
+      const { findOrCreateTelegramUser } = await import("./userService.js");
+      user = await findOrCreateTelegramUser({ telegramId, firstName: "Player " + String(telegramId).slice(-4) });
+    }
     if (!user) throw new Error("USER_NOT_FOUND");
 
     const round = await this.getOrCreateActiveRound(roomId);
@@ -273,6 +345,8 @@ export class GameRoundService {
         },
       });
     });
+
+    this.removeClient(roomId, String(telegramId));
 
     // 3. Check if threshold of minPlayers/cards is reached to start countdown
     const updatedRound = await prisma.gameRound.findUnique({
