@@ -56,9 +56,16 @@ export function createApp() {
       const { prisma } = await import("./db/prisma.js");
       const rooms = await prisma.room.findMany({
         where: { isActive: true },
-        orderBy: { stakeAmount: "asc" },
+        orderBy: [{ sortOrder: "asc" }, { stakeAmount: "asc" }],
       });
-      res.json({ ok: true, rooms });
+      res.json({
+        ok: true,
+        rooms: rooms.map((r) => ({
+          ...r,
+          stakeAmount: Number(r.stakeAmount),
+          houseCutPercent: Number(r.houseCutPercent),
+        })),
+      });
     } catch (err) {
       res.status(500).json({ ok: false, error: "FAILED_FETCH_ROOMS" });
     }

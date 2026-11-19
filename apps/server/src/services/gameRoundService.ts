@@ -19,10 +19,11 @@ export function getLetterForNumber(n: number): BingoLetter {
 
 export function checkCartelaWin(
   grid: number[][],
-  calledNumbersSet: Set<number>
+  calledNumbersSet: Set<number>,
+  freeCenter: boolean = true
 ): { hasWon: boolean; winningKeys: Set<string> } {
   const isMarked = (r: number, c: number) => {
-    if (r === 2 && c === 2) return true; // Center free
+    if (freeCenter && r === 2 && c === 2) return true; // Center free star if enabled
     return calledNumbersSet.has(grid[r][c]);
   };
 
@@ -149,14 +150,16 @@ export class GameRoundService {
   async getRoomState(roomId: string) {
     const round = await this.getOrCreateActiveRound(roomId);
     const stake = Number(round.room.stakeAmount);
+    const houseCutPct = Number(round.room.houseCutPercent ?? 20) / 100;
+    const minPlayers = round.room.minPlayers ?? 2;
     const takenCards = round.tickets.map((t) => t.cartelaNumber);
     const uniqueUserIds = new Set(round.tickets.map((t) => t.userId));
     const playersCount = uniqueUserIds.size;
     const ticketsCount = round.tickets.length;
 
-    // Real derash = 80% of total bets
+    // Real derash = total bets minus room house commission cut %
     const totalPot = ticketsCount * stake;
-    const derash = Math.floor(totalPot * 0.8);
+    const derash = Math.floor(totalPot * (1 - houseCutPct));
 
     let remainingCountdown = 0;
     if (round.status === "COUNTDOWN" && round.countdownEndsAt) {
@@ -182,7 +185,7 @@ export class GameRoundService {
       roundId: round.id,
       status: round.status,
       stake,
-      minPlayers: 3, // Real rule: minimum 3 players/cards required to start countdown
+      minPlayers,
       playersCount,
       ticketsCount,
       derash,
@@ -191,6 +194,11 @@ export class GameRoundService {
       calledNumbers: round.calledNumbers,
       currentBall,
       recentCalls,
+      countdownSeconds: round.room.countdownSeconds ?? 30,
+      callIntervalMs: round.room.callIntervalMs ?? 3500,
+      cartelaPoolSize: round.room.cartelaPoolSize ?? 600,
+      freeCenter: round.room.freeCenter ?? true,
+      winningPattern: round.room.winningPattern,
     };
   }
 
@@ -249,11 +257,12 @@ export class GameRoundService {
         });
       }
 
-      // Update round pots
+      // Update round pots based on room's house cut %
       const newTotalTickets = round.tickets.length + cartelaNumbers.length;
       const newTotalPot = newTotalTickets * stakeAmount;
-      const newHouseCut = newTotalPot * 0.2;
-      const newPrizePool = newTotalPot * 0.8;
+      const houseCutPct = Number(round.room.houseCutPercent ?? 20) / 100;
+      const newHouseCut = newTotalPot * houseCutPct;
+      const newPrizePool = newTotalPot - newHouseCut;
 
       await tx.gameRound.update({
         where: { id: round.id },
@@ -265,14 +274,14 @@ export class GameRoundService {
       });
     });
 
-    // 3. Check if threshold of 3 players/cards is reached to start countdown
+    // 3. Check if threshold of minPlayers/cards is reached to start countdown
     const updatedRound = await prisma.gameRound.findUnique({
       where: { id: round.id },
-      include: { tickets: true },
+      include: { tickets: true, room: true },
     });
 
     const totalTicketsCount = updatedRound?.tickets.length || 0;
-    const minRequired = 3;
+    const minRequired = updatedRound?.room.minPlayers || 2;
 
     if (totalTicketsCount >= minRequired && updatedRound?.status === "WAITING") {
       await this.startCountdown(roomId, round.id);
@@ -285,10 +294,14 @@ export class GameRoundService {
   }
 
   /**
-   * Starts the 45-second live countdown when >= 3 cards are registered
+   * Starts the live countdown when >= minPlayers cards are registered
    */
   async startCountdown(roomId: string, roundId: string) {
-    const countdownSeconds = 45;
+    const round = await prisma.gameRound.findUnique({
+      where: { id: roundId },
+      include: { room: true },
+    });
+    const countdownSeconds = round?.room.countdownSeconds || 30;
     const endsAt = new Date(Date.now() + countdownSeconds * 1000);
 
     await prisma.gameRound.update({
@@ -358,11 +371,18 @@ export class GameRoundService {
     let state = await this.getRoomState(roomId);
     this.broadcastRoomState(roomId, state);
 
-    // Call a ball every 3.5 seconds
+    const initialRound = await prisma.gameRound.findUnique({
+      where: { id: roundId },
+      include: { room: true },
+    });
+    const intervalMs = initialRound?.room.callIntervalMs || 3500;
+
+    // Call a ball based on room's configured interval (ms)
     const callTimer = setInterval(async () => {
       const round = await prisma.gameRound.findUnique({
         where: { id: roundId },
         include: {
+          room: true,
           tickets: {
             include: {
               user: { select: { id: true, firstName: true, username: true } },
@@ -409,6 +429,7 @@ export class GameRoundService {
 
       // Check REAL tickets for winner
       const calledSet = new Set(nextCalled);
+      const freeCenter = round.room?.freeCenter ?? true;
       const winningTickets: Array<{
         ticket: typeof round.tickets[0];
         keys: Set<string>;
@@ -416,7 +437,7 @@ export class GameRoundService {
 
       for (const ticket of round.tickets) {
         const grid = generateDeterministicCartela(ticket.cartelaNumber);
-        const win = checkCartelaWin(grid, calledSet);
+        const win = checkCartelaWin(grid, calledSet, freeCenter);
         if (win.hasWon) {
           winningTickets.push({ ticket, keys: win.winningKeys });
         }
@@ -428,7 +449,7 @@ export class GameRoundService {
         this.callTimers.delete(roomId);
         await this.handleWinner(roomId, roundId, winningTickets);
       }
-    }, 3500);
+    }, intervalMs);
 
     this.callTimers.set(roomId, callTimer);
   }

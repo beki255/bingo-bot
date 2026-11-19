@@ -159,7 +159,7 @@ export default function App() {
         /* 2. 600 Cartela Selection Board */
         <CartelaBoard
           stake={selectedRoom.stakeAmount}
-          roomName={selectedRoom.nameEn}
+          roomName={userLang === "AM" ? selectedRoom.nameAm || selectedRoom.nameEn : selectedRoom.nameEn || selectedRoom.nameAm}
           userBalance={userBalance}
           onBack={handleBackToLobby}
           onDeductBalance={(amount) => updateBalance(Math.max(0, userBalance - amount))}
@@ -243,7 +243,7 @@ export default function App() {
                           }`}
                         >
                           <Play className="w-5 h-5 fill-white text-white" />
-                          <span>{room.nameEn}</span>
+                          <span>{userLang === "AM" ? room.nameAm || room.nameEn : room.nameEn || room.nameAm}</span>
                         </button>
                       );
                     })}
