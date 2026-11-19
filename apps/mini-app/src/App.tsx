@@ -96,6 +96,36 @@ export default function App() {
     localStorage.setItem("bingo_wallet_balance", String(newBal));
   };
 
+  const handleDeductBalance = (amount: number) => {
+    if (amount <= 0) return;
+    setUserBalance((prev) => {
+      const next = Math.max(0, prev - amount);
+      localStorage.setItem("bingo_wallet_balance", String(next));
+      return next;
+    });
+  };
+
+  const handleWinPrize = (prize: number) => {
+    if (prize <= 0) return;
+    setUserBalance((prev) => {
+      const next = prev + prize;
+      localStorage.setItem("bingo_wallet_balance", String(next));
+      return next;
+    });
+
+    const tgId = getTelegramId();
+    if (tgId && selectedRoom) {
+      fetch(`${API_BASE_URL}/api/rooms/${selectedRoom.id}/claim-win`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          telegramId: tgId,
+          prize,
+        }),
+      }).catch(() => {});
+    }
+  };
+
   const [rooms, setRooms] = useState<Room[]>([
     { id: "10", nameAm: "መደብ 10", nameEn: "Play 10", stakeAmount: 10 },
     { id: "20", nameAm: "መደብ 20", nameEn: "Play 20", stakeAmount: 20 },
@@ -166,7 +196,7 @@ export default function App() {
           cartelaNumbers={playingCards}
           registeredCards={registeredRoundCards}
           userBalance={userBalance}
-          onWinPrize={(prize) => updateBalance(userBalance + prize)}
+          onWinPrize={handleWinPrize}
           onLeave={handleBackToLobby}
           onNextRound={() => {
             setPlayingCards(null);
@@ -187,7 +217,7 @@ export default function App() {
           roomName={userLang === "AM" ? selectedRoom.nameAm || selectedRoom.nameEn : selectedRoom.nameEn || selectedRoom.nameAm}
           userBalance={userBalance}
           onBack={handleBackToLobby}
-          onDeductBalance={(amount) => updateBalance(Math.max(0, userBalance - amount))}
+          onDeductBalance={handleDeductBalance}
           onConfirmPlay={(userCards, allRegisteredCards) => {
             setPlayingCards(userCards);
             setRegisteredRoundCards(allRegisteredCards);

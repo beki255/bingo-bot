@@ -212,13 +212,37 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
         if (prev <= 1) {
           clearInterval(interval);
           if (onConfirmPlayRef.current) {
+            // Find any selected cards that user picked but hasn't paid for yet:
+            const unpaidCards = selectedCardsRef.current.filter(
+              (c) => !lockedUserCardsRef.current.includes(c)
+            );
+
+            // Deduct the stake for the unpaid playing cards so the wallet drops by (e.g. 120 - 20 = 100):
+            if (unpaidCards.length > 0) {
+              const unpaidCost = unpaidCards.length * stake;
+              if (onDeductBalance) {
+                onDeductBalance(unpaidCost);
+              }
+              if (roomId && telegramId) {
+                fetch(`${API_BASE_URL}/api/rooms/${roomId}/buy`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    telegramId,
+                    cartelaNumbers: unpaidCards,
+                  }),
+                }).catch(() => {});
+              }
+              setLockedUserCards((p) => [...p, ...unpaidCards]);
+              lockedUserCardsRef.current = [...lockedUserCardsRef.current, ...unpaidCards];
+            }
+
             // When countdown finishes, everyone enters the live game:
             // - If user confirmed cards or selected cards, they enter as active player
             // - If user didn't pick any cards, they enter as spectator in "Watching Only" mode
-            const userPlayingCards =
-              lockedUserCardsRef.current.length > 0
-                ? lockedUserCardsRef.current
-                : selectedCardsRef.current;
+            const userPlayingCards = Array.from(
+              new Set([...lockedUserCardsRef.current, ...selectedCardsRef.current])
+            );
             const allRoundCards = Array.from(
               new Set([
                 ...registeredCardsRef.current,
@@ -328,6 +352,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
           onDeductBalance(totalCost);
         }
         setLockedUserCards(cardsToBuy);
+        lockedUserCardsRef.current = cardsToBuy;
 
         if (data.state && Array.isArray(data.state.takenCards)) {
           setRegisteredCards(data.state.takenCards);
@@ -348,6 +373,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
       onDeductBalance(totalCost);
     }
     setLockedUserCards(cardsToBuy);
+    lockedUserCardsRef.current = cardsToBuy;
     setRegisteredCards((prev) => {
       const combined = [...prev];
       cardsToBuy.forEach((c) => {

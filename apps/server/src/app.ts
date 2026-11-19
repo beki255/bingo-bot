@@ -117,6 +117,44 @@ export function createApp() {
     }
   });
 
+  app.post("/api/rooms/:id/claim-win", async (req, res) => {
+    try {
+      const { telegramId, prize } = req.body;
+      const prizeAmount = Math.floor(Number(prize));
+      if (!telegramId || isNaN(prizeAmount) || prizeAmount <= 0) {
+        return res.status(400).json({ ok: false, error: "INVALID_PARAMETERS" });
+      }
+      const numericId = String(telegramId).replace(/\D/g, "");
+      const tgId = BigInt(numericId.length > 0 ? numericId : "999001");
+      const { prisma } = await import("./db/prisma.js");
+      const { creditWinTx, centsToNumber, toCents } = await import("./services/walletService.js");
+      const { gameRoundService } = await import("./services/gameRoundService.js");
+
+      let user = await prisma.user.findUnique({
+        where: { telegramId: tgId },
+        include: { wallet: true },
+      });
+      if (!user) {
+        const { findOrCreateTelegramUser } = await import("./services/userService.js");
+        user = await findOrCreateTelegramUser({ telegramId: tgId, firstName: "Player " + String(tgId).slice(-4) });
+      }
+      if (!user) {
+        return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
+      }
+
+      const round = await gameRoundService.getOrCreateActiveRound(req.params.id);
+      let updatedBalance = 0;
+      await prisma.$transaction(async (tx) => {
+        const balAfter = await creditWinTx(tx, user.id, prizeAmount, round.id);
+        updatedBalance = centsToNumber(toCents(balAfter));
+      });
+
+      res.json({ ok: true, newBalance: updatedBalance });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message || "FAILED_CLAIM_WIN" });
+    }
+  });
+
   app.get("/api/wallet/balance", async (req, res) => {
     try {
       const telegramId = req.query.telegramId ? String(req.query.telegramId) : null;

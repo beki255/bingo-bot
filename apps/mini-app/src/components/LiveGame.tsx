@@ -68,6 +68,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
   // Shuffled sequence of 1 to 75
   const deckRef = useRef<number[]>([]);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasAwardedPrizeRef = useRef(false);
 
   // Sound caller using Web Audio API
   const playBallSound = (num: number) => {
@@ -280,7 +281,8 @@ export const LiveGame: React.FC<LiveGameProps> = ({
         const isUserCard = cartelaNumbers.includes(cardNo);
 
         // If user won, credit real prize to their balance!
-        if (isUserCard && onWinPrize) {
+        if (isUserCard && onWinPrize && !hasAwardedPrizeRef.current) {
+          hasAwardedPrizeRef.current = true;
           onWinPrize(derash);
         }
 
@@ -367,7 +369,10 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     const grid = generateDeterministicCartela(activeCartelaNo);
     const res = checkGridWin(grid, new Set(calledNumbers));
     if (res.hasWon) {
-      if (onWinPrize) onWinPrize(derash);
+      if (onWinPrize && !hasAwardedPrizeRef.current) {
+        hasAwardedPrizeRef.current = true;
+        onWinPrize(derash);
+      }
       setWinnerData({
         winners: [{ name: "You (ተጫዋች)", avatar: "U", cardNo: activeCartelaNo }],
         winningCartelaNo: activeCartelaNo,
@@ -682,9 +687,14 @@ export const LiveGame: React.FC<LiveGameProps> = ({
           </div>
 
           <div className="w-full max-w-[310px] bg-[#161834] border border-white/10 rounded-2xl p-3 shadow-2xl">
-            <div className="flex items-center justify-center gap-1.5 text-amber-400 font-bold text-xs mb-2">
-              <Trophy className="w-4 h-4 text-amber-400" />
-              <span>Winning Cartela : {winnerData.winningCartelaNo}</span>
+            <div className="flex items-center justify-between text-xs mb-2 px-1">
+              <div className="flex items-center gap-1.5 text-amber-400 font-extrabold text-xs">
+                <Trophy className="w-4 h-4 text-amber-400" />
+                <span>Winning Cartela: #{winnerData.winningCartelaNo}</span>
+              </div>
+              <div className="text-emerald-400 font-black text-xs bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                +{derash} ETB
+              </div>
             </div>
 
             <div className="bg-[#0f1124] p-1.5 rounded-xl border border-white/5">
