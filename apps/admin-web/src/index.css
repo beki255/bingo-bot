@@ -5,23 +5,142 @@
 @layer base {
   body {
     font-family: "Inter", system-ui, -apple-system, sans-serif;
-    background-color: #080b12;
-    color: #ffffff;
+    transition: background-color 0.15s ease, color 0.15s ease;
   }
 }
 
-/* Custom subtle scrollbars */
+html.dark {
+  color-scheme: dark;
+}
+html.light {
+  color-scheme: light;
+}
+
+/* Light Mode Overrides */
+html.light body {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+html.light .bg-\[\#080b12\] {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+html.light .bg-\[\#0b101d\] {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+}
+
+html.light .bg-\[\#0f1422\] {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05), 0 1px 2px -1px rgb(0 0 0 / 0.03);
+}
+
+html.light .bg-\[\#0a0e18\] {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+}
+
+html.light .bg-\[\#0f1628\],
+html.light .bg-\[\#131b2e\],
+html.light .bg-\[\#162038\] {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+html.light .border-\[\#1a233b\],
+html.light .border-\[\#1e2742\],
+html.light .border-\[\#1e2945\],
+html.light .border-\[\#243356\],
+html.light .border-\[\#161f35\] {
+  border-color: #e2e8f0 !important;
+}
+
+html.light .divide-\[\#161e34\] > * + * {
+  border-color: #e2e8f0 !important;
+}
+
+html.light .text-white {
+  color: #0f172a !important;
+}
+
+html.light .text-gray-200,
+html.light .text-gray-300 {
+  color: #1e293b !important;
+}
+
+html.light .text-gray-400 {
+  color: #64748b !important;
+}
+
+html.light .text-gray-500 {
+  color: #94a3b8 !important;
+}
+
+/* Ensure solid-color buttons retain crisp white text */
+html.light .bg-blue-600,
+html.light .bg-blue-500,
+html.light .bg-emerald-600,
+html.light .bg-emerald-500,
+html.light .bg-rose-600,
+html.light .bg-rose-500,
+html.light .bg-purple-600,
+html.light .bg-amber-600,
+html.light .bg-cyan-600 {
+  color: #ffffff !important;
+}
+html.light .bg-blue-600 *,
+html.light .bg-blue-500 *,
+html.light .bg-emerald-600 *,
+html.light .bg-emerald-500 *,
+html.light .bg-rose-600 *,
+html.light .bg-rose-500 *,
+html.light .bg-purple-600 *,
+html.light .bg-amber-600 *,
+html.light .bg-cyan-600 * {
+  color: #ffffff !important;
+}
+
+/* Form inputs in light mode */
+html.light input,
+html.light select,
+html.light textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+html.light input:focus,
+html.light select:focus,
+html.light textarea:focus {
+  border-color: #2563eb !important;
+}
+html.light input::placeholder,
+html.light textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Custom scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
-::-webkit-scrollbar-track {
+html.dark ::-webkit-scrollbar-track {
   background: #0a0e18;
 }
-::-webkit-scrollbar-thumb {
+html.dark ::-webkit-scrollbar-thumb {
   background: #1e2742;
   border-radius: 999px;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #2f3d66;
+html.light ::-webkit-scrollbar-track {
+  background: #e2e8f0;
+}
+html.light ::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 999px;
 }

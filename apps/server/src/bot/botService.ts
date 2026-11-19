@@ -703,27 +703,18 @@ class BotService {
 
     const msg =
       lang === "AM"
-        ? `🛡️ <b>${escapeHtml(settings.botName)} — የአድሚን መቆጣጠሪያ</b>\n\n` +
+        ? `🛡️ <b>${escapeHtml(settings.botName)} — የአድሚን ፈጣን መቆጣጠሪያ (Cashier Bot)</b>\n\n` +
           `👤 ኃላፊነት: <b>${escapeHtml(user.role)}</b>\n` +
-          `👥 ጠቅላላ ተጠቃሚዎች: <b>${totalUsers}</b>\n` +
-          `⏳ በመጠባበቅ ላይ ያሉ ገቢዎች (Deposits): <b>${pendingDeposits}</b>\n` +
-          `⏳ በመጠባበቅ ላይ ያሉ ወጪዎች (Withdraws): <b>${pendingWithdraws}</b>\n\n` +
-          `<i>ከታች ፈጣን የቦት መቆጣጠሪያዎች አሉ፤ ሙሉ አስተዳደር በWeb Admin Portal ላይ ይገኛል።</i>`
-        : `🛡️ <b>${escapeHtml(settings.botName)} — Admin Panel</b>\n\n` +
+          `⏳ በመጠባበቅ ላይ ያሉ ገቢዎች: <b>${pendingDeposits}</b>\n` +
+          `⏳ በመጠባበቅ ላይ ያሉ ወጪዎች: <b>${pendingWithdraws}</b>\n\n` +
+          `<i>ይህ ቦት ለፈጣን የገንዘብ ማጽደቂያ ብቻ የተዘጋጀ ነው። ሙሉ የተጠቃሚዎች፣ ሩሞችና የሲስተም አስተዳደር በWeb Admin Portal ላይ ይገኛል!</i>`
+        : `🛡️ <b>${escapeHtml(settings.botName)} — Admin Cashier Bot</b>\n\n` +
           `👤 Role: <b>${escapeHtml(user.role)}</b>\n` +
-          `👥 Total Users: <b>${totalUsers}</b>\n` +
           `⏳ Pending Deposits: <b>${pendingDeposits}</b>\n` +
           `⏳ Pending Withdraws: <b>${pendingWithdraws}</b>\n\n` +
-          `<i>Quick bot controls below; full management is on the Web Admin Portal.</i>`;
+          `<i>Streamlined for instant approvals. Full management is on the Web Admin Portal!</i>`;
 
     const kb = new InlineKeyboard();
-    const playLabel = lang === "AM" ? "🎮 ቢንጎ ተጫወት (Play Bingo)" : "🎮 Play Bingo";
-    if (env.miniAppUrl.startsWith("https://")) {
-      kb.webApp(playLabel, env.miniAppUrl).row();
-    } else {
-      kb.text(playLabel, "menu:play").row();
-    }
-
     kb.text(
       lang === "AM" ? `💳 ገቢዎች (${pendingDeposits})` : `💳 Deposits (${pendingDeposits})`,
       "adm:pending_deposits"
@@ -732,19 +723,18 @@ class BotService {
         lang === "AM" ? `💸 ወጪዎች (${pendingWithdraws})` : `💸 Withdraws (${pendingWithdraws})`,
         "adm:pending_withdraws"
       )
-      .row()
-      .text(lang === "AM" ? "📊 ሪፖርት" : "📊 Live Stats", "adm:stats")
-      .text(lang === "AM" ? "🏦 የክፍያ አካውንቶች" : "🏦 Payment Accounts", "adm:accounts")
       .row();
-    if (user.role === "SUPER_ADMIN") {
-      kb.text(lang === "AM" ? "⚙️ የሲስተም ቅንብሮች" : "⚙️ System Settings", "adm:settings")
-        .text(lang === "AM" ? "🔐 የWeb መግቢያ ኮድ" : "🔐 Web Admin Code", "adm:web_code")
-        .row();
-    } else {
-      kb.text(lang === "AM" ? "🔐 የWeb መግቢያ ኮድ" : "🔐 Web Admin Code", "adm:web_code").row();
+
+    if (env.adminWebUrl) {
+      if (env.adminWebUrl.startsWith("https://")) {
+        kb.webApp(lang === "AM" ? "🌐 Admin Web Portal ክፈት" : "🌐 Open Admin Web", env.adminWebUrl).row();
+      } else {
+        kb.url(lang === "AM" ? "🌐 Admin Web Portal ክፈት" : "🌐 Open Admin Web", env.adminWebUrl).row();
+      }
     }
-    kb.text(lang === "AM" ? "🌐 English" : "🌐 አማርኛ", "adm:lang")
-      .text(lang === "AM" ? "👤 የተጫዋች ሜኑ (ለሙከራ)" : "👤 Player Menu (Test)", "adm:player_view");
+
+    kb.text(lang === "AM" ? "🔐 የWeb መግቢያ ኮድ (OTP)" : "🔐 Web Login OTP", "adm:web_code")
+      .text(lang === "AM" ? "🌐 ቋንቋ / Language" : "🌐 ቋንቋ / Language", "adm:lang");
 
     await reply(msg, { parse_mode: "HTML", reply_markup: kb });
   }

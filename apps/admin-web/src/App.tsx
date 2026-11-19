@@ -64,6 +64,21 @@ const TAB_META: Record<AdminTab, { title: string; subtitle: string }> = {
 };
 
 export default function App() {
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    const saved = localStorage.getItem("bingo_admin_theme");
+    return saved === "light" ? "light" : "dark";
+  });
+
+  useEffect(() => {
+    document.documentElement.classList.remove("dark", "light");
+    document.documentElement.classList.add(theme);
+    localStorage.setItem("bingo_admin_theme", theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  };
+
   const [admin, setAdmin] = useState<AdminProfile | null>(() => {
     const raw = localStorage.getItem("bingo_admin_profile");
     if (raw && getAuthToken()) {
@@ -158,6 +173,8 @@ export default function App() {
           onRefresh={handleRefresh}
           isRefreshing={isRefreshing}
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
 
         <main className="flex-1 overflow-y-auto">
