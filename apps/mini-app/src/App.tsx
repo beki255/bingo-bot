@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { HelpCircle, Play } from "lucide-react";
+import { HelpCircle, Play, AlertCircle } from "lucide-react";
 import { API_BASE_URL } from "./config.js";
 import { RulesScreen } from "./components/RulesScreen.js";
 import { BottomNav, type TabType } from "./components/BottomNav.js";
@@ -232,21 +232,33 @@ export default function App() {
 
                   {/* Stake Buttons */}
                   <div className="flex flex-col gap-3.5">
-                    {rooms.map((room, idx) => {
-                      const isGreen = idx % 2 === 0;
-                      return (
-                        <button
-                          key={room.id}
-                          onClick={() => handleSelectRoom(room)}
-                          className={`w-full py-4 px-6 rounded-xl font-extrabold text-lg flex items-center justify-center gap-2.5 text-white active:scale-[0.98] transition-all duration-150 ${
-                            isGreen ? "glow-btn-green" : "glow-btn-blue"
-                          }`}
-                        >
-                          <Play className="w-5 h-5 fill-white text-white" />
-                          <span>{userLang === "AM" ? room.nameAm || room.nameEn : room.nameEn || room.nameAm}</span>
-                        </button>
-                      );
-                    })}
+                    {rooms.length === 0 ? (
+                      <div className="py-6 text-center text-gray-400 text-xs flex flex-col items-center">
+                        <AlertCircle className="w-8 h-8 text-amber-400 mb-2 opacity-80" />
+                        <p className="font-bold text-gray-200">
+                          {userLang === "AM" ? "በአሁኑ ጊዜ ክፍት መደቦች የሉም" : "No active game rooms right now"}
+                        </p>
+                        <p className="text-[11px] text-gray-400 mt-1">
+                          {userLang === "AM" ? "እባክዎ ትንሽ ቆይተው እንደገና ይሞክሩ" : "Please check back shortly."}
+                        </p>
+                      </div>
+                    ) : (
+                      rooms.map((room, idx) => {
+                        const isGreen = idx % 2 === 0;
+                        return (
+                          <button
+                            key={room.id}
+                            onClick={() => handleSelectRoom(room)}
+                            className={`w-full py-4 px-6 rounded-xl font-extrabold text-lg flex items-center justify-center gap-2.5 text-white active:scale-[0.98] transition-all duration-150 ${
+                              isGreen ? "glow-btn-green" : "glow-btn-blue"
+                            }`}
+                          >
+                            <Play className="w-5 h-5 fill-white text-white" />
+                            <span>{userLang === "AM" ? room.nameAm || room.nameEn : room.nameEn || room.nameAm}</span>
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               </div>
