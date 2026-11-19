@@ -30,18 +30,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/shared/package.json ./packages/shared/
-COPY apps/mini-app/package.json ./apps/mini-app/
-COPY apps/server/package.json ./apps/server/
-
-RUN pnpm install --prod --frozen-lockfile
-
-COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
-COPY --from=builder /app/apps/mini-app/dist ./apps/mini-app/dist
-COPY --from=builder /app/apps/server/dist ./apps/server/dist
-COPY --from=builder /app/apps/server/prisma ./apps/server/prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+# Copy the complete built application from builder
+COPY --from=builder /app ./
 
 EXPOSE 3001
 
