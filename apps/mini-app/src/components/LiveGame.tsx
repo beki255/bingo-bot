@@ -85,6 +85,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
   const [winnerData, setWinnerData] = useState<WinnerData | null>(null);
   const [nextGameCountdown, setNextGameCountdown] = useState(6);
   const hasAwardedPrizeRef = useRef(false);
+  const hasGameEndedRef = useRef(false);
 
   // Sound caller using Web Audio API
   const playBallSound = (num: number) => {
@@ -217,7 +218,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       if (typeof state?.ticketsCount === "number") {
         setServerPlayersCount(state.ticketsCount);
       }
-      if (state?.status === "WAITING") {
+      if (state?.status === "WAITING" && hasGameEndedRef.current) {
         if (onNextRound) onNextRound();
       }
     });
@@ -233,6 +234,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     });
 
     s.on("game_won", (data: any) => {
+      hasGameEndedRef.current = true;
       const winningCard = data?.winningCartelaNo;
       const isUserWinner = cartelaNumbers.includes(winningCard);
 
@@ -253,6 +255,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     });
 
     s.on("game_ended", () => {
+      hasGameEndedRef.current = true;
       setTimeout(() => {
         if (onNextRound) onNextRound();
       }, 3000);
@@ -285,7 +288,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
           if (st.gameId || st.gameCode) setDisplayGameId(st.gameId || st.gameCode);
           if (Array.isArray(st.calledNumbers)) setCalledNumbers(st.calledNumbers);
           if (st.currentBall) setCurrentBall(st.currentBall);
-          if (st.status === "WAITING") {
+          if (st.status === "WAITING" && hasGameEndedRef.current) {
             if (onNextRound) onNextRound();
           }
         }

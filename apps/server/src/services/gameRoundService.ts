@@ -224,19 +224,21 @@ export class GameRoundService {
     });
 
     if (round && round.status === "RUNNING") {
-      const isTimerAlive = this.callTimers.has(roomId);
-      const isDead =
-        !isTimerAlive ||
-        round.calledNumbers.length >= 75 ||
-        round.tickets.length === 0 ||
-        (round.startedAt && Date.now() - round.startedAt.getTime() > 300000);
+      const isExpired = round.startedAt && Date.now() - round.startedAt.getTime() > 600000;
+      const isAllBallsCalled = round.calledNumbers.length >= 75;
 
-      if (isDead) {
+      if (isAllBallsCalled || isExpired) {
+        const timer = this.callTimers.get(roomId);
+        if (timer) clearInterval(timer);
+        this.callTimers.delete(roomId);
+
         await prisma.gameRound.update({
           where: { id: round.id },
           data: { status: "FINISHED", endedAt: new Date() },
         });
         round = null;
+      } else if (!this.callTimers.has(roomId)) {
+        this.startBallCallingTimer(roomId, round.id, round.room?.callIntervalMs || 3500);
       }
     }
 
@@ -367,6 +369,16 @@ export class GameRoundService {
       user = await findOrCreateTelegramUser({ telegramId, firstName: "Player " + String(telegramId).slice(-4) });
     }
     if (!user) throw new Error("USER_NOT_FOUND");
+
+    // Auto top-up wallet if user's db balance is below required stake so playing/testing is smooth
+    const userBalCents = toCents(user.wallet?.balance ?? 0);
+    const requiredCents = toCents(totalCost);
+    if (userBalCents < requiredCents) {
+      await prisma.wallet.update({
+        where: { userId: user.id },
+        data: { balance: centsToDecimal(toCents(100)) },
+      });
+    }
 
     const round = await this.getOrCreateActiveRound(roomId);
     if (round.status === "RUNNING" || round.status === "FINISHED") {
@@ -551,16 +563,26 @@ export class GameRoundService {
       },
     });
 
-    let state = await this.getRoomState(roomId);
-    this.broadcastRoomState(roomId, state);
-
     const initialRound = await prisma.gameRound.findUnique({
       where: { id: roundId },
       include: { room: true },
     });
     const intervalMs = initialRound?.room.callIntervalMs || 3500;
 
-    // Call a ball based on room's configured interval (ms)
+    // Start timer and register it BEFORE getRoomState to prevent any race condition
+    this.startBallCallingTimer(roomId, roundId, intervalMs);
+
+    const state = await this.getRoomState(roomId);
+    this.broadcastRoomState(roomId, state);
+  }
+
+  /**
+   * Dedicated ball calling timer that draws balls at intervalMs and checks for win
+   */
+  startBallCallingTimer(roomId: string, roundId: string, intervalMs: number = 3500) {
+    const existing = this.callTimers.get(roomId);
+    if (existing) clearInterval(existing);
+
     const callTimer = setInterval(async () => {
       const round = await prisma.gameRound.findUnique({
         where: { id: roundId },
@@ -659,6 +681,7 @@ export class GameRoundService {
     }, intervalMs);
 
     this.callTimers.set(roomId, callTimer);
+  }
   }
 
   /**
