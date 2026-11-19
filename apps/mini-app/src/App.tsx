@@ -31,6 +31,7 @@ export default function App() {
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [playingCards, setPlayingCards] = useState<number[] | null>(null);
   const [registeredRoundCards, setRegisteredRoundCards] = useState<number[]>([]);
+  const [currentRoundGameId, setCurrentRoundGameId] = useState<string>("");
 
   // User wallet balance (defaults to 0 just like in real accounts and the screenshot)
   const [userBalance, setUserBalance] = useState<number>(() => {
@@ -178,6 +179,9 @@ export default function App() {
       const res = await fetch(`${API_BASE_URL}/api/rooms/${room.id}/state`);
       const data = await res.json();
       if (data.ok && data.state) {
+        if (data.state.gameId || data.state.gameCode) {
+          setCurrentRoundGameId(data.state.gameId || data.state.gameCode);
+        }
         if (data.state.status === "RUNNING") {
           // Ongoing game currently active: enter directly as spectator in Watching Only mode
           setPlayingCards([]);
@@ -202,6 +206,7 @@ export default function App() {
       {activeTab === "game" && selectedRoom && playingCards !== null ? (
         <LiveGame
           roomId={selectedRoom.id}
+          gameId={currentRoundGameId}
           telegramId={getTelegramId()}
           clientId={getTelegramId()}
           stake={selectedRoom.stakeAmount}

@@ -223,6 +223,36 @@ export class GameRoundService {
       orderBy: { createdAt: "desc" },
     });
 
+    if (round && round.status === "RUNNING") {
+      const isTimerAlive = this.callTimers.has(roomId);
+      const isDead =
+        !isTimerAlive ||
+        round.calledNumbers.length >= 75 ||
+        round.tickets.length === 0 ||
+        (round.startedAt && Date.now() - round.startedAt.getTime() > 300000);
+
+      if (isDead) {
+        await prisma.gameRound.update({
+          where: { id: round.id },
+          data: { status: "FINISHED", endedAt: new Date() },
+        });
+        round = null;
+      }
+    }
+
+    if (round && round.status === "COUNTDOWN") {
+      const isCountdownAlive = this.countdownTimers.has(roomId);
+      const isExpired = round.countdownEndsAt && round.countdownEndsAt.getTime() < Date.now() - 30000;
+      if (!isCountdownAlive && isExpired) {
+        await prisma.gameRound.update({
+          where: { id: round.id },
+          data: { status: "WAITING", countdownEndsAt: null },
+        });
+        round.status = "WAITING";
+        round.countdownEndsAt = null;
+      }
+    }
+
     if (!round) {
       const room = await prisma.room.findUnique({ where: { id: roomId } });
       if (!room) throw new Error("ROOM_NOT_FOUND");
@@ -287,9 +317,13 @@ export class GameRoundService {
         letter: getLetterForNumber(num),
       }));
 
+    const gameCode = "TB" + (round.id.length > 6 ? round.id.slice(-6).toUpperCase() : round.id.toUpperCase());
+
     return {
       roomId,
       roundId: round.id,
+      gameId: gameCode,
+      gameCode,
       status: round.status,
       stake,
       minPlayers,

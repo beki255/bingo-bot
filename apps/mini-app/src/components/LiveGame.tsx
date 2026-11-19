@@ -18,6 +18,7 @@ interface WinnerData {
 
 interface LiveGameProps {
   roomId?: string;
+  gameId?: string;
   telegramId?: string | null;
   clientId?: string | null;
   stake: number;
@@ -34,6 +35,7 @@ interface LiveGameProps {
 
 export const LiveGame: React.FC<LiveGameProps> = ({
   roomId,
+  gameId: initialGameId,
   telegramId,
   clientId,
   stake,
@@ -53,8 +55,8 @@ export const LiveGame: React.FC<LiveGameProps> = ({
   const [activeCartelaIndex, setActiveCartelaIndex] = useState(0);
   const activeCartelaNo = cartelaNumbers[activeCartelaIndex] || registeredCards[0] || 1;
 
-  // Real calculations based strictly on registered cards (NO FAKE DATA)
-  const [gameId] = useState(() => "TB" + Math.floor(100000 + Math.random() * 900000));
+  // Real synchronized Game ID from server
+  const [displayGameId, setDisplayGameId] = useState<string>(initialGameId || "TB100001");
 
   // Ball calling state synchronized with server
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -200,6 +202,9 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     });
 
     s.on("room_state", (state: any) => {
+      if (state?.gameId || state?.gameCode) {
+        setDisplayGameId(state.gameId || state.gameCode);
+      }
       if (Array.isArray(state?.calledNumbers)) {
         setCalledNumbers(state.calledNumbers);
       }
@@ -255,6 +260,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       .then((data) => {
         if (data.ok && data.state) {
           const st = data.state;
+          if (st.gameId || st.gameCode) setDisplayGameId(st.gameId || st.gameCode);
           if (Array.isArray(st.calledNumbers)) setCalledNumbers(st.calledNumbers);
           if (st.currentBall) setCurrentBall(st.currentBall);
           if (typeof st.derash === "number") setServerDerash(st.derash);
@@ -270,6 +276,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
         const data = await res.json();
         if (data.ok && data.state) {
           const st = data.state;
+          if (st.gameId || st.gameCode) setDisplayGameId(st.gameId || st.gameCode);
           if (Array.isArray(st.calledNumbers)) setCalledNumbers(st.calledNumbers);
           if (st.currentBall) setCurrentBall(st.currentBall);
           if (st.status === "WAITING") {
@@ -371,7 +378,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
             const list = raw ? JSON.parse(raw) : [];
             const newRecord = {
               id: "game-" + Date.now(),
-              gameId: "Game " + gameId,
+              gameId: "Game " + displayGameId,
               date: new Date().toISOString(),
               isWinner: isUserCard,
               stake,
@@ -467,7 +474,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
           const list = raw ? JSON.parse(raw) : [];
           const newRecord = {
             id: "game-" + Date.now(),
-            gameId: "Game " + gameId,
+            gameId: "Game " + displayGameId,
             date: new Date().toISOString(),
             isWinner: true,
             stake,
@@ -494,7 +501,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
         {/* Game ID */}
         <div className="bg-[#1b1f3d] p-1 rounded-lg flex flex-col justify-center border border-white/5">
           <span className="text-[9px] text-gray-400 font-semibold uppercase">Game ID</span>
-          <span className="font-extrabold text-[11px] text-white truncate">{gameId}</span>
+          <span className="font-extrabold text-[11px] text-white truncate">{displayGameId}</span>
         </div>
 
         {/* Players */}
