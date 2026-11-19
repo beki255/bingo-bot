@@ -759,7 +759,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ admin, refreshSignal }) =>
               <button
                 type="button"
                 onClick={() => setAdjustTarget(null)}
-                className="px-4 py-2 rounded-xl bg-[#1a233b] text-xs font-bold text-gray-300"
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#1a233b] dark:hover:bg-[#243356] border border-slate-300 dark:border-transparent text-xs font-bold text-slate-700 dark:text-gray-300 transition"
               >
                 Cancel
               </button>
@@ -800,7 +800,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ admin, refreshSignal }) =>
               <button
                 type="button"
                 onClick={() => setMsgTarget(null)}
-                className="px-4 py-2 rounded-xl bg-[#1a233b] text-xs font-bold text-gray-300"
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#1a233b] dark:hover:bg-[#243356] border border-slate-300 dark:border-transparent text-xs font-bold text-slate-700 dark:text-gray-300 transition"
               >
                 Cancel
               </button>
@@ -876,7 +876,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ admin, refreshSignal }) =>
               <button
                 type="button"
                 onClick={() => setRoleTarget(null)}
-                className="px-4 py-2 rounded-xl bg-[#1a233b] text-xs font-bold text-gray-300"
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#1a233b] dark:hover:bg-[#243356] border border-slate-300 dark:border-transparent text-xs font-bold text-slate-700 dark:text-gray-300 transition"
               >
                 Cancel
               </button>
