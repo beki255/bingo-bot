@@ -584,6 +584,16 @@ export class GameRoundService {
       if (remainingDeck.length === 0) {
         clearInterval(callTimer);
         this.callTimers.delete(roomId);
+        await prisma.gameRound.update({
+          where: { id: roundId },
+          data: { status: "FINISHED", endedAt: new Date() },
+        });
+        this.emitEvent(roomId, "game_ended", { reason: "NO_BALLS_LEFT" });
+        setTimeout(async () => {
+          await this.getOrCreateActiveRound(roomId);
+          const nextState = await this.getRoomState(roomId);
+          this.broadcastRoomState(roomId, nextState);
+        }, 5000);
         return;
       }
 
@@ -631,6 +641,20 @@ export class GameRoundService {
         clearInterval(callTimer);
         this.callTimers.delete(roomId);
         await this.handleWinner(roomId, roundId, winningTickets);
+      } else if (nextCalled.length >= 75 || remainingDeck.length === 0) {
+        // All 75 balls called without winner
+        clearInterval(callTimer);
+        this.callTimers.delete(roomId);
+        await prisma.gameRound.update({
+          where: { id: roundId },
+          data: { status: "FINISHED", endedAt: new Date() },
+        });
+        this.emitEvent(roomId, "game_ended", { reason: "ALL_BALLS_CALLED" });
+        setTimeout(async () => {
+          await this.getOrCreateActiveRound(roomId);
+          const nextState = await this.getRoomState(roomId);
+          this.broadcastRoomState(roomId, nextState);
+        }, 5000);
       }
     }, intervalMs);
 

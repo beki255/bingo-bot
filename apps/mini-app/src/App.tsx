@@ -182,7 +182,7 @@ export default function App() {
         if (data.state.gameId || data.state.gameCode) {
           setCurrentRoundGameId(data.state.gameId || data.state.gameCode);
         }
-        if (data.state.status === "RUNNING") {
+        if (data.state.status === "RUNNING" && (!Array.isArray(data.state.calledNumbers) || data.state.calledNumbers.length < 75)) {
           // Ongoing game currently active: enter directly as spectator in Watching Only mode
           setPlayingCards([]);
           setRegisteredRoundCards(data.state.takenCards || []);

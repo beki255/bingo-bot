@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { ArrowLeft, RotateCw, Check, AlertCircle, X, Users, Eye } from "lucide-react";
 import { io, Socket } from "socket.io-client";
-import { generateDeterministicCartela, BINGO_LETTERS } from "@bingo/shared";
 import { API_BASE_URL } from "../config.js";
 
 interface CartelaBoardProps {
@@ -39,7 +38,6 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
   const [lockedUserCards, setLockedUserCards] = useState<number[]>([]);
   const [registeredCards, setRegisteredCards] = useState<number[]>([]);
   const [otherPendingSelections, setOtherPendingSelections] = useState<number[]>([]);
-  const [previewCardNumber, setPreviewCardNumber] = useState<number | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
 
   // Countdown starts when at least minPlayers cards are registered
@@ -347,7 +345,6 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     const maxLimit = maxCardsPerPlayer || 2;
     if (selectedCards.length >= maxLimit) {
       showToast(`በአንድ ጨዋታ መምረጥ የሚችሉት እስከ ${maxLimit} ካርቴላ ብቻ ነው (Max ${maxLimit} cards)`);
-      setPreviewCardNumber(num);
       return;
     }
 
@@ -357,26 +354,11 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
 
     if (userBalance < requiredBalance) {
       showToast("ቀሪ ሂሳብዎ በቂ ስላልሆነ መምረጥ አይችሉም። ተመልካች ሆነው ይከታተሉ (Watching Only)");
-      setPreviewCardNumber(num);
       return;
     }
 
-    setPreviewCardNumber(num);
     setSelectedCards([...selectedCards, num]);
   };
-
-  const activePreviewCard =
-    previewCardNumber ??
-    (selectedCards.length > 0 ? selectedCards[selectedCards.length - 1] : 1);
-
-  const previewGrid = useMemo(() => {
-    if (!activePreviewCard) return null;
-    try {
-      return generateDeterministicCartela(activePreviewCard);
-    } catch {
-      return null;
-    }
-  }, [activePreviewCard]);
 
   const totalCost = selectedCards.length * stake;
 
@@ -503,7 +485,6 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
               if (lockedUserCards.length === 0) {
                 setSelectedCards([]);
               }
-              setPreviewCardNumber(null);
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 active:scale-95 text-xs font-semibold transition"
           >
@@ -544,15 +525,14 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
         </div>
       )}
 
-      {/* Cartela Selection Grid (8 Columns Scrollable) with 5x5 Board Preview at bottom */}
-      <div className="flex-1 overflow-y-auto px-2 py-3 bg-[#0a0c1b]/60 pb-44">
+      {/* Cartela Selection Grid (8 Columns Scrollable) */}
+      <div className="flex-1 overflow-y-auto px-2 py-3 bg-[#0a0c1b]/60 pb-24">
         <div className="grid grid-cols-8 gap-1.5">
           {Array.from({ length: cartelaPoolSize }, (_, i) => i + 1).map((num) => {
             const isTaken = takenCardsSet.has(num);
             const isPendingOther = otherPendingSet.has(num);
             const isSelected = selectedCards.includes(num);
             const isLocked = lockedUserCards.includes(num);
-            const isPreviewing = activePreviewCard === num;
 
             let bgClass = "bg-[#1b1f3b]/70 border border-white/10 text-gray-200 hover:border-cyan-400/50";
             if (isTaken) {
@@ -561,8 +541,6 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
               bgClass = "bg-amber-600/80 border-2 border-amber-400 text-white font-extrabold shadow-[0_0_10px_rgba(251,191,36,0.6)] animate-pulse";
             } else if (isLocked || isSelected) {
               bgClass = "bg-[#00c853] border-2 border-[#69f0ae] text-black font-black shadow-[0_0_12px_rgba(0,200,83,0.6)] scale-[1.03]";
-            } else if (isPreviewing) {
-              bgClass = "bg-[#00b0ff]/30 border-2 border-cyan-400 text-cyan-300";
             }
 
             return (
@@ -576,52 +554,6 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
               </button>
             );
           })}
-        </div>
-
-        {/* 5x5 Cartela Board Preview (displayed directly at the bottom after the numbers) */}
-        <div className="mt-6 pt-4 border-t border-white/15">
-          <div className="bg-[#141630] border border-amber-400/40 rounded-xl p-3.5 shadow-2xl">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
-                🃏 ካርቴላ #{activePreviewCard} የቦርድ እይታ (Board Preview)
-              </span>
-              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white/10 text-cyan-300">
-                {selectedCards.includes(activePreviewCard)
-                  ? "✅ የተመረጠ (Selected)"
-                  : `👆 ለመምረጥ ቁጥር ${activePreviewCard} ይጫኑ`}
-              </span>
-            </div>
-
-            {previewGrid && (
-              <div className="grid grid-cols-5 gap-1.5 max-w-[320px] mx-auto bg-[#0b0d1e] p-2.5 rounded-xl border border-white/15 shadow-inner">
-                {BINGO_LETTERS.map((letter) => (
-                  <div
-                    key={letter}
-                    className="text-center text-xs font-black text-amber-400 py-1 bg-white/10 rounded-lg shadow-sm"
-                  >
-                    {letter}
-                  </div>
-                ))}
-                {previewGrid.map((row: number[], rIdx: number) =>
-                  row.map((val: number, cIdx: number) => {
-                    const isCenterStar = rIdx === 2 && cIdx === 2;
-                    return (
-                      <div
-                        key={`${rIdx}-${cIdx}`}
-                        className={`h-8 flex items-center justify-center text-xs font-extrabold rounded-lg ${
-                          isCenterStar
-                            ? "bg-amber-500/30 text-amber-300 border border-amber-400/50 shadow-sm"
-                            : "bg-[#181d3d] text-gray-100 border border-white/5"
-                        }`}
-                      >
-                        {isCenterStar ? "⭐" : val}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
-          </div>
         </div>
       </div>
 

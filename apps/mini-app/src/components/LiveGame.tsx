@@ -252,6 +252,12 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       playBingoWinSound();
     });
 
+    s.on("game_ended", () => {
+      setTimeout(() => {
+        if (onNextRound) onNextRound();
+      }, 3000);
+    });
+
     setSocket(s);
 
     // Initial fetch of room state to catch up immediately if joining mid-game
