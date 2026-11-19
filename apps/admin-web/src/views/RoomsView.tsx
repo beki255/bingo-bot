@@ -20,6 +20,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
   const [stakeAmount, setStakeAmount] = useState(10);
   const [houseCutPercent, setHouseCutPercent] = useState(20);
   const [minPlayers, setMinPlayers] = useState(2);
+  const [maxCartelasPerUser, setMaxCartelasPerUser] = useState(2);
   const [cartelaPoolSize, setCartelaPoolSize] = useState(600);
   const [countdownSeconds, setCountdownSeconds] = useState(30);
   const [callIntervalMs, setCallIntervalMs] = useState(3500);
@@ -59,6 +60,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
     setStakeAmount(50);
     setHouseCutPercent(20);
     setMinPlayers(2);
+    setMaxCartelasPerUser(2);
     setCartelaPoolSize(600);
     setCountdownSeconds(30);
     setCallIntervalMs(3500);
@@ -76,6 +78,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
     setStakeAmount(r.stakeAmount);
     setHouseCutPercent(r.houseCutPercent);
     setMinPlayers(r.minPlayers);
+    setMaxCartelasPerUser(r.maxCartelasPerUser ?? 2);
     setCartelaPoolSize(r.cartelaPoolSize);
     setCountdownSeconds(r.countdownSeconds);
     setCallIntervalMs(r.callIntervalMs);
@@ -96,6 +99,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
         stakeAmount: Number(stakeAmount),
         houseCutPercent: Number(houseCutPercent),
         minPlayers: Number(minPlayers),
+        maxCartelasPerUser: Number(maxCartelasPerUser),
         cartelaPoolSize: Number(cartelaPoolSize),
         countdownSeconds: Number(countdownSeconds),
         callIntervalMs: Number(callIntervalMs),
@@ -220,12 +224,12 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
                   <b className="text-white">{(r.callIntervalMs / 1000).toFixed(1)}s</b>
                 </div>
                 <div>
-                  <span className="text-[10px] text-gray-500 block">Pool Size</span>
-                  <b className="text-cyan-400">{r.cartelaPoolSize} cards</b>
+                  <span className="text-[10px] text-gray-500 block">Pool / Max Cards</span>
+                  <b className="text-cyan-400">{r.cartelaPoolSize} pool • {r.maxCartelasPerUser ?? 2} max</b>
                 </div>
                 <div>
-                  <span className="text-[10px] text-gray-500 block">Rounds Played</span>
-                  <b className="text-white">{r.totalRounds}</b>
+                  <span className="text-[10px] text-gray-500 block">Min Players / Rounds</span>
+                  <b className="text-white">{r.minPlayers} min • {r.totalRounds} played</b>
                 </div>
               </div>
 
@@ -363,7 +367,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="text-xs font-bold text-gray-300 block mb-1">Winning Pattern</label>
                 <select
@@ -379,6 +383,18 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
                   <option value="X_SHAPE">X Shape</option>
                   <option value="FULL_HOUSE">Full House</option>
                 </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-300 block mb-1">Max Cards / Player</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  required
+                  value={maxCartelasPerUser}
+                  onChange={(e) => setMaxCartelasPerUser(Number(e.target.value))}
+                  className="w-full bg-[#0a0e18] border border-[#1e2742] rounded-xl px-3 py-2 text-xs text-white font-mono"
+                />
               </div>
               <div>
                 <label className="text-xs font-bold text-gray-300 block mb-1">Sort Order</label>

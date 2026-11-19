@@ -90,7 +90,7 @@ export function createApp() {
         return res.status(400).json({ ok: false, error: "MISSING_CLIENT_ID" });
       }
       const { gameRoundService } = await import("./services/gameRoundService.js");
-      gameRoundService.setClientSelection(req.params.id, String(clientId), Array.isArray(cards) ? cards : []);
+      await gameRoundService.setClientSelection(req.params.id, String(clientId), Array.isArray(cards) ? cards : []);
       res.json({ ok: true, pendingSelections: gameRoundService.getPendingSelections(req.params.id) });
     } catch (err: any) {
       res.status(500).json({ ok: false, error: err.message || "FAILED_SELECT" });

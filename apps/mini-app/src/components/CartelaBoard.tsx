@@ -12,6 +12,7 @@ interface CartelaBoardProps {
   roomName: string;
   userBalance?: number;
   minPlayers?: number;
+  maxCardsPerPlayer?: number;
   countdownSeconds?: number;
   cartelaPoolSize?: number;
   onBack: () => void;
@@ -27,6 +28,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
   roomName,
   userBalance = 0,
   minPlayers = 2,
+  maxCardsPerPlayer = 2,
   countdownSeconds = 30,
   cartelaPoolSize = 600,
   onBack,
@@ -114,6 +116,13 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
       }
     });
 
+    s.on("countdown_tick", (data: any) => {
+      if (typeof data?.countdown === "number") {
+        setIsCountdownRunning(true);
+        setCountdown(data.countdown);
+      }
+    });
+
     setSocket(s);
 
     // Fallback HTTP poll every 2.5s to ensure rock-solid state synchronization
@@ -162,16 +171,31 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     }).catch(() => {});
   }, [selectedCards, roomId, clientId, socket]);
 
-  // When registered cards reach minPlayers threshold, start countdown automatically
+  // Total active/selected cartelas in the room across all players
+  const totalActiveRoomCards = useMemo(() => {
+    const set = new Set<number>();
+    registeredCards.forEach((c) => set.add(c));
+    selectedCards.forEach((c) => set.add(c));
+    otherPendingSelections.forEach((c) => set.add(c));
+    return set.size;
+  }, [registeredCards, selectedCards, otherPendingSelections]);
+
+  // When total active cards in the room reach minPlayers threshold, start countdown automatically
   useEffect(() => {
-    if (registeredCards.length >= minPlayers && !isCountdownRunning) {
+    if (totalActiveRoomCards >= minPlayers && !isCountdownRunning) {
       setIsCountdownRunning(true);
       setCountdown(countdownSeconds);
     }
-  }, [registeredCards.length, minPlayers, isCountdownRunning, countdownSeconds]);
+  }, [totalActiveRoomCards, minPlayers, isCountdownRunning, countdownSeconds]);
 
   const lockedUserCardsRef = useRef(lockedUserCards);
   lockedUserCardsRef.current = lockedUserCards;
+
+  const selectedCardsRef = useRef(selectedCards);
+  selectedCardsRef.current = selectedCards;
+
+  const otherPendingSelectionsRef = useRef(otherPendingSelections);
+  otherPendingSelectionsRef.current = otherPendingSelections;
 
   const registeredCardsRef = useRef(registeredCards);
   registeredCardsRef.current = registeredCards;
@@ -189,9 +213,20 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
           clearInterval(interval);
           if (onConfirmPlayRef.current) {
             // When countdown finishes, everyone enters the live game:
-            // - If user confirmed cards, they enter as active player
-            // - If user didn't pick/lock cards, they enter as spectator in "Watching Only" mode!
-            onConfirmPlayRef.current(lockedUserCardsRef.current, registeredCardsRef.current);
+            // - If user confirmed cards or selected cards, they enter as active player
+            // - If user didn't pick any cards, they enter as spectator in "Watching Only" mode
+            const userPlayingCards =
+              lockedUserCardsRef.current.length > 0
+                ? lockedUserCardsRef.current
+                : selectedCardsRef.current;
+            const allRoundCards = Array.from(
+              new Set([
+                ...registeredCardsRef.current,
+                ...selectedCardsRef.current,
+                ...otherPendingSelectionsRef.current,
+              ])
+            );
+            onConfirmPlayRef.current(userPlayingCards, allRoundCards);
           }
           return 0;
         }
@@ -224,32 +259,39 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
       return;
     }
 
+    const maxLimit = maxCardsPerPlayer || 2;
+    if (selectedCards.length >= maxLimit) {
+      showToast(`በአንድ ጨዋታ መምረጥ የሚችሉት እስከ ${maxLimit} ካርቴላ ብቻ ነው (Max ${maxLimit} cards)`);
+      setPreviewCardNumber(num);
+      return;
+    }
+
     // Check wallet balance
     const nextCount = selectedCards.length + 1;
     const requiredBalance = nextCount * stake;
 
     if (userBalance < requiredBalance) {
       showToast("ቀሪ ሂሳብዎ በቂ ስላልሆነ መምረጥ አይችሉም። ተመልካች ሆነው ይከታተሉ (Watching Only)");
+      setPreviewCardNumber(num);
       return;
     }
 
     setPreviewCardNumber(num);
-
-    if (selectedCards.length >= 2) {
-      setSelectedCards([selectedCards[0], num]);
-    } else {
-      setSelectedCards([...selectedCards, num]);
-    }
+    setSelectedCards([...selectedCards, num]);
   };
 
+  const activePreviewCard =
+    previewCardNumber ??
+    (selectedCards.length > 0 ? selectedCards[selectedCards.length - 1] : 1);
+
   const previewGrid = useMemo(() => {
-    if (!previewCardNumber) return null;
+    if (!activePreviewCard) return null;
     try {
-      return generateDeterministicCartela(previewCardNumber);
+      return generateDeterministicCartela(activePreviewCard);
     } catch {
       return null;
     }
-  }, [previewCardNumber]);
+  }, [activePreviewCard]);
 
   const totalCost = selectedCards.length * stake;
 
@@ -401,7 +443,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
         {/* Countdown / Waiting Status */}
         <div className="bg-[#24211a] rounded-lg py-1 px-2 flex flex-col items-center justify-center border border-amber-500/40 shadow-[0_0_10px_rgba(255,215,0,0.15)]">
           <span className="text-xs font-black text-amber-400 tracking-wider">
-            {isCountdownRunning ? `${countdown} s` : `⏳ ${registeredCards.length}/${minPlayers}`}
+            {isCountdownRunning ? `${countdown} s` : `⏳ ${totalActiveRoomCards}/${minPlayers}`}
           </span>
         </div>
       </div>
@@ -410,20 +452,20 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
       {!isCountdownRunning && (
         <div className="px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/20 text-center">
           <span className="text-[11px] font-bold text-amber-300">
-            ⏳ ቆጣሪው እንዲጀምር ቢያንስ {minPlayers} ካርቴላዎች መመረጥ አለባቸው ({registeredCards.length}/${minPlayers} ተመርጧል)
+            ⏳ ቆጣሪው እንዲጀምር ቢያንስ {minPlayers} ካርቴላዎች መመረጥ አለባቸው ({totalActiveRoomCards}/${minPlayers} ተመርጧል)
           </span>
         </div>
       )}
 
-      {/* Cartela Selection Grid (8 Columns Scrollable) */}
-      <div className="flex-1 overflow-y-auto px-2 py-3 bg-[#0a0c1b]/60">
+      {/* Cartela Selection Grid (8 Columns Scrollable) with 5x5 Board Preview at bottom */}
+      <div className="flex-1 overflow-y-auto px-2 py-3 bg-[#0a0c1b]/60 pb-44">
         <div className="grid grid-cols-8 gap-1.5">
           {Array.from({ length: cartelaPoolSize }, (_, i) => i + 1).map((num) => {
             const isTaken = takenCardsSet.has(num);
             const isPendingOther = otherPendingSet.has(num);
             const isSelected = selectedCards.includes(num);
             const isLocked = lockedUserCards.includes(num);
-            const isPreviewing = previewCardNumber === num;
+            const isPreviewing = activePreviewCard === num;
 
             let bgClass = "bg-[#1b1f3b]/70 border border-white/10 text-gray-200 hover:border-cyan-400/50";
             if (isTaken) {
@@ -448,42 +490,53 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
             );
           })}
         </div>
-      </div>
 
-      {/* Cartela 5x5 Preview Drawer */}
-      {previewCardNumber && previewGrid && (
-        <div className="bg-[#141630] border-t-2 border-amber-400/60 p-3 shadow-2xl animate-slideUp">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-amber-300 flex items-center gap-1">
-              🃏 ካርቴላ #{previewCardNumber} (Cartela #{previewCardNumber})
-            </span>
-            <span className="text-[11px] text-gray-400">
-              {selectedCards.includes(previewCardNumber) ? "✅ የተመረጠ" : "👆 ለመምረጥ ይጫኑ"}
-            </span>
-          </div>
+        {/* 5x5 Cartela Board Preview (displayed directly at the bottom after the numbers) */}
+        <div className="mt-6 pt-4 border-t border-white/15">
+          <div className="bg-[#141630] border border-amber-400/40 rounded-xl p-3.5 shadow-2xl">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                🃏 ካርቴላ #{activePreviewCard} የቦርድ እይታ (Board Preview)
+              </span>
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white/10 text-cyan-300">
+                {selectedCards.includes(activePreviewCard)
+                  ? "✅ የተመረጠ (Selected)"
+                  : `👆 ለመምረጥ ቁጥር ${activePreviewCard} ይጫኑ`}
+              </span>
+            </div>
 
-          <div className="grid grid-cols-5 gap-1 max-w-[280px] mx-auto bg-[#0b0d1e] p-1.5 rounded-lg border border-white/10">
-            {BINGO_LETTERS.map((letter) => (
-              <div
-                key={letter}
-                className="text-center text-[10px] font-black text-amber-400 py-0.5 bg-white/5 rounded"
-              >
-                {letter}
+            {previewGrid && (
+              <div className="grid grid-cols-5 gap-1.5 max-w-[320px] mx-auto bg-[#0b0d1e] p-2.5 rounded-xl border border-white/15 shadow-inner">
+                {BINGO_LETTERS.map((letter) => (
+                  <div
+                    key={letter}
+                    className="text-center text-xs font-black text-amber-400 py-1 bg-white/10 rounded-lg shadow-sm"
+                  >
+                    {letter}
+                  </div>
+                ))}
+                {previewGrid.map((row: number[], rIdx: number) =>
+                  row.map((val: number, cIdx: number) => {
+                    const isCenterStar = rIdx === 2 && cIdx === 2;
+                    return (
+                      <div
+                        key={`${rIdx}-${cIdx}`}
+                        className={`h-8 flex items-center justify-center text-xs font-extrabold rounded-lg ${
+                          isCenterStar
+                            ? "bg-amber-500/30 text-amber-300 border border-amber-400/50 shadow-sm"
+                            : "bg-[#181d3d] text-gray-100 border border-white/5"
+                        }`}
+                      >
+                        {isCenterStar ? "⭐" : val}
+                      </div>
+                    );
+                  })
+                )}
               </div>
-            ))}
-            {previewGrid.map((row: number[], rIdx: number) =>
-              row.map((val: number, cIdx: number) => (
-                <div
-                  key={`${rIdx}-${cIdx}`}
-                  className="h-6 flex items-center justify-center text-[11px] font-bold text-gray-200 bg-[#161a38] rounded"
-                >
-                  {val}
-                </div>
-              ))
             )}
           </div>
         </div>
-      )}
+      </div>
 
       {/* Bottom Sticky Action Bar: Confirm / Buy or Watching Only Info */}
       <div className="fixed bottom-14 left-0 right-0 z-30 px-4 py-2 bg-[#0e1022]/95 backdrop-blur-md border-t border-white/10 max-w-md mx-auto">
@@ -499,7 +552,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
               <span>ቀሪ ሂሳብ የለዎትም (Watching Only)</span>
             </div>
             <span className="text-amber-300 font-extrabold text-xs shrink-0">
-              {isCountdownRunning ? `⏳ ${countdown}s` : `⏳ ${registeredCards.length}/${minPlayers}`}
+              {isCountdownRunning ? `⏳ ${countdown}s` : `⏳ ${totalActiveRoomCards}/${minPlayers}`}
             </span>
           </div>
         ) : (

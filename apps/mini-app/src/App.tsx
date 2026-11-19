@@ -16,6 +16,7 @@ interface Room {
   stakeAmount: number;
   houseCutPercent?: number;
   minPlayers?: number;
+  maxCartelasPerUser?: number;
   countdownSeconds?: number;
   callIntervalMs?: number;
   cartelaPoolSize?: number;
@@ -180,6 +181,7 @@ export default function App() {
           clientId={getTelegramId()}
           stake={selectedRoom.stakeAmount}
           minPlayers={selectedRoom.minPlayers ?? 2}
+          maxCardsPerPlayer={selectedRoom.maxCartelasPerUser ?? 2}
           countdownSeconds={selectedRoom.countdownSeconds ?? 30}
           cartelaPoolSize={selectedRoom.cartelaPoolSize ?? 600}
           roomName={userLang === "AM" ? selectedRoom.nameAm || selectedRoom.nameEn : selectedRoom.nameEn || selectedRoom.nameAm}

@@ -87,7 +87,7 @@ export class GameRoundService {
     return Array.from(new Set(list));
   }
 
-  setClientSelection(roomId: string, clientId: string, cards: number[]) {
+  async setClientSelection(roomId: string, clientId: string, cards: number[]) {
     if (!this.pendingSelections.has(roomId)) {
       this.pendingSelections.set(roomId, new Map());
     }
@@ -103,6 +103,17 @@ export class GameRoundService {
         pendingSelections: this.getPendingSelections(roomId),
       });
     }
+
+    // Automatically start countdown when total active/selected cards in the room meet minPlayers
+    try {
+      const round = await this.getOrCreateActiveRound(roomId);
+      const totalSelected = this.getPendingSelections(roomId).length;
+      const totalActive = (round.tickets?.length || 0) + totalSelected;
+      const minRequired = round.room?.minPlayers || 2;
+      if (totalActive >= minRequired && round.status === "WAITING") {
+        await this.startCountdown(roomId, round.id);
+      }
+    } catch {}
   }
 
   removeClient(roomId: string, clientId: string) {
@@ -266,6 +277,7 @@ export class GameRoundService {
       callIntervalMs: round.room.callIntervalMs ?? 3500,
       cartelaPoolSize: round.room.cartelaPoolSize ?? 600,
       freeCenter: round.room.freeCenter ?? true,
+      maxCartelasPerUser: round.room.maxCartelasPerUser ?? 2,
       winningPattern: round.room.winningPattern,
     };
   }
