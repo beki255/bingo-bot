@@ -11,7 +11,8 @@
     "typecheck": "pnpm -r typecheck",
     "db:generate": "pnpm --filter @bingo/server db:generate",
     "db:push": "pnpm --filter @bingo/server db:push",
-    "db:seed": "pnpm --filter @bingo/server db:seed"
+    "db:seed": "pnpm --filter @bingo/server db:seed",
+    "studio": "open-database.bat"
   },
   "devDependencies": {
     "typescript": "^5.8.2"
