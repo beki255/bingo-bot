@@ -32,6 +32,10 @@ export function createApp() {
     res.json({ ok: true, timestamp: new Date().toISOString() });
   });
 
+  app.get("/ping", (_req, res) => {
+    res.type("text/plain").send("OK");
+  });
+
   app.get("/api/rooms", async (_req, res) => {
     try {
       const { prisma } = await import("./db/prisma.js");
