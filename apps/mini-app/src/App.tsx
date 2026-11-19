@@ -169,6 +169,8 @@ export default function App() {
       ) : activeTab === "game" && selectedRoom ? (
         /* 2. Cartela Selection Board */
         <CartelaBoard
+          roomId={selectedRoom.id}
+          telegramId={getTelegramId()}
           stake={selectedRoom.stakeAmount}
           minPlayers={selectedRoom.minPlayers ?? 2}
           countdownSeconds={selectedRoom.countdownSeconds ?? 30}

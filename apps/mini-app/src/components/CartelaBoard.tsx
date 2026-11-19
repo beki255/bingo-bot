@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { ArrowLeft, RotateCw, Check, AlertCircle, X, Users, Eye } from "lucide-react";
 import { generateDeterministicCartela, BINGO_LETTERS } from "@bingo/shared";
+import { API_BASE_URL } from "../config.js";
 
 interface CartelaBoardProps {
+  roomId?: string;
+  telegramId?: string | null;
   stake: number;
   roomName: string;
   userBalance?: number;
@@ -15,6 +18,8 @@ interface CartelaBoardProps {
 }
 
 export const CartelaBoard: React.FC<CartelaBoardProps> = ({
+  roomId,
+  telegramId,
   stake,
   roomName,
   userBalance = 0,
@@ -57,29 +62,41 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     return set;
   }, [registeredCards, lockedUserCards]);
 
-  // Simulate other players picking cards in this room over time
+  // Fetch real room state from backend: strictly cards purchased by real users (NO FAKE / MOCK SELECTIONS)
   useEffect(() => {
-    const initialTimer = setTimeout(() => {
-      setRegisteredCards((prev) => {
-        if (prev.length >= minPlayers + 6) return prev;
-        const randomCard = Math.floor(Math.random() * cartelaPoolSize) + 1;
-        return prev.includes(randomCard) ? prev : [...prev, randomCard];
-      });
-    }, 1200);
+    if (!roomId) return;
 
-    const interval = setInterval(() => {
-      setRegisteredCards((prev) => {
-        if (prev.length >= minPlayers + 8) return prev;
-        const randomCard = Math.floor(Math.random() * cartelaPoolSize) + 1;
-        return prev.includes(randomCard) ? prev : [...prev, randomCard];
-      });
-    }, 2600);
+    let isMounted = true;
+    const fetchRealRoomState = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/state`);
+        const data = await res.json();
+        if (isMounted && data.ok && data.state) {
+          const st = data.state;
+          // Only real taken cards from database
+          if (Array.isArray(st.takenCards)) {
+            setRegisteredCards(st.takenCards);
+          }
+          if (st.status === "COUNTDOWN") {
+            setIsCountdownRunning(true);
+            if (typeof st.countdown === "number" && st.countdown > 0) {
+              setCountdown(st.countdown);
+            }
+          } else if (st.status === "WAITING") {
+            setIsCountdownRunning(false);
+          }
+        }
+      } catch {}
+    };
+
+    fetchRealRoomState();
+    const pollInterval = setInterval(fetchRealRoomState, 2500);
 
     return () => {
-      clearTimeout(initialTimer);
-      clearInterval(interval);
+      isMounted = false;
+      clearInterval(pollInterval);
     };
-  }, [cartelaPoolSize, minPlayers]);
+  }, [roomId]);
 
   // When registered cards reach minPlayers threshold, start countdown automatically
   useEffect(() => {
@@ -166,29 +183,62 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
 
   const totalCost = selectedCards.length * stake;
 
-  const handleConfirmPurchase = () => {
+  const handleConfirmPurchase = async () => {
     if (selectedCards.length === 0) {
       showToast("Please pick at least 1 cartela");
       return;
     }
     if (userBalance < totalCost) {
-      showToast("Insufficient wallet balance.");
+      showToast("ቀሪ ሂሳብዎ በቂ አይደለም (Insufficient balance)");
       return;
     }
 
-    // 1. Deduct stake from real user balance
+    const cardsToBuy = [...selectedCards];
+
+    // Real API purchase if roomId and telegramId are present
+    if (roomId && telegramId) {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/buy`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            telegramId,
+            cartelaNumbers: cardsToBuy,
+          }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          showToast(data.error || "ካርቴላ መግዛት አልተቻለም");
+          return;
+        }
+
+        if (onDeductBalance) {
+          onDeductBalance(totalCost);
+        }
+        setLockedUserCards(cardsToBuy);
+
+        if (data.state && Array.isArray(data.state.takenCards)) {
+          setRegisteredCards(data.state.takenCards);
+        }
+        if (data.state?.status === "COUNTDOWN") {
+          setIsCountdownRunning(true);
+          setCountdown(data.state.countdown || countdownSeconds);
+        }
+        return;
+      } catch {
+        showToast("Error processing purchase. Please try again.");
+        return;
+      }
+    }
+
+    // Local state fallback if previewing without Telegram
     if (onDeductBalance) {
       onDeductBalance(totalCost);
     }
-
-    // 2. Lock user's cards
-    const userCards = [...selectedCards];
-    setLockedUserCards(userCards);
-
-    // 3. Register user cards into room
+    setLockedUserCards(cardsToBuy);
     setRegisteredCards((prev) => {
       const combined = [...prev];
-      userCards.forEach((c) => {
+      cardsToBuy.forEach((c) => {
         if (!combined.includes(c)) combined.push(c);
       });
       return combined;

@@ -47,8 +47,8 @@ export const LiveGame: React.FC<LiveGameProps> = ({
 
   // Real calculations based strictly on registered cards (NO FAKE DATA)
   const [gameId] = useState(() => "TB" + Math.floor(100000 + Math.random() * 900000));
-  const totalCardsCount = registeredCards.length > 0 ? registeredCards.length : Math.max(2, cartelaNumbers.length);
-  const playerCount = Math.max(1, Math.ceil(totalCardsCount / 1.2));
+  const totalCardsCount = registeredCards.length > 0 ? registeredCards.length : cartelaNumbers.length;
+  const playerCount = totalCardsCount;
   const houseCut = (houseCutPercent ?? 20) / 100;
   const derash = Math.floor(totalCardsCount * stake * (1 - houseCut));
 
