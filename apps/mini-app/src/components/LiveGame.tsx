@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Volume2, VolumeX, RotateCw, LogOut, Sparkles, Trophy, Crown } from "lucide-react";
+import { io, Socket } from "socket.io-client";
 import { generateDeterministicCartela, BINGO_LETTERS, type BingoLetter } from "@bingo/shared";
+import { API_BASE_URL } from "../config.js";
 
 interface WinnerInfo {
   name: string;
@@ -15,6 +17,9 @@ interface WinnerData {
 }
 
 interface LiveGameProps {
+  roomId?: string;
+  telegramId?: string | null;
+  clientId?: string | null;
   stake: number;
   houseCutPercent?: number;
   callIntervalMs?: number;
@@ -28,6 +33,9 @@ interface LiveGameProps {
 }
 
 export const LiveGame: React.FC<LiveGameProps> = ({
+  roomId,
+  telegramId,
+  clientId,
   stake,
   houseCutPercent = 20,
   callIntervalMs = 3500,
@@ -47,14 +55,24 @@ export const LiveGame: React.FC<LiveGameProps> = ({
 
   // Real calculations based strictly on registered cards (NO FAKE DATA)
   const [gameId] = useState(() => "TB" + Math.floor(100000 + Math.random() * 900000));
-  const totalCardsCount = registeredCards.length > 0 ? registeredCards.length : cartelaNumbers.length;
-  const playerCount = totalCardsCount;
-  const houseCut = (houseCutPercent ?? 20) / 100;
-  const derash = Math.floor(totalCardsCount * stake * (1 - houseCut));
 
-  // Ball calling state
+  // Ball calling state synchronized with server
+  const [socket, setSocket] = useState<Socket | null>(null);
   const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
   const [currentBall, setCurrentBall] = useState<{ letter: BingoLetter; num: number } | null>(null);
+  const [serverDerash, setServerDerash] = useState<number | null>(null);
+  const [serverPlayersCount, setServerPlayersCount] = useState<number>(registeredCards.length);
+
+  const totalCardsCount =
+    serverPlayersCount > 0
+      ? serverPlayersCount
+      : registeredCards.length > 0
+      ? registeredCards.length
+      : cartelaNumbers.length;
+  const playerCount = totalCardsCount;
+  const houseCut = (houseCutPercent ?? 20) / 100;
+  const derash = serverDerash ?? Math.floor(totalCardsCount * stake * (1 - houseCut));
+
   const [isAutomatic, setIsAutomatic] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
@@ -64,10 +82,6 @@ export const LiveGame: React.FC<LiveGameProps> = ({
   // Real winner celebration state
   const [winnerData, setWinnerData] = useState<WinnerData | null>(null);
   const [nextGameCountdown, setNextGameCountdown] = useState(6);
-
-  // Shuffled sequence of 1 to 75
-  const deckRef = useRef<number[]>([]);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasAwardedPrizeRef = useRef(false);
 
   // Sound caller using Web Audio API
@@ -163,57 +177,122 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       }));
   }, [calledNumbers]);
 
-  const callNextBall = () => {
-    if (deckRef.current.length === 0 || winnerData) return;
-    const nextNum = deckRef.current.shift()!;
-    const letter = getLetterForNumber(nextNum);
-
-    setCurrentBall({ letter, num: nextNum });
-    setCalledNumbers((prev) => [...prev, nextNum]);
-    playBallSound(nextNum);
-  };
-
-  // Initialize deck & start calling
+  // Initialize marked cells with center star if freeCenter is enabled
   useEffect(() => {
-    const numbers = Array.from({ length: 75 }, (_, i) => i + 1);
-    for (let i = numbers.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [numbers[i], numbers[j]] = [numbers[j], numbers[i]];
-    }
-    deckRef.current = numbers;
-
-    // Center star is automatically FREE marked for player's cartelas if freeCenter enabled
     const initMarked: Record<number, Set<string>> = {};
     cartelaNumbers.forEach((cNum) => {
       initMarked[cNum] = freeCenter ? new Set(["2-2"]) : new Set();
     });
     setMarkedCells(initMarked);
+  }, [cartelaNumbers, freeCenter]);
 
-    // Call first ball immediately
-    callNextBall();
+  // Real-time server Socket.IO multiplayer connection
+  useEffect(() => {
+    if (!roomId) return;
+    const socketUrl = API_BASE_URL || (typeof window !== "undefined" ? window.location.origin : "");
+    const s = io(socketUrl, {
+      transports: ["websocket", "polling"],
+      reconnectionAttempts: 10,
+    });
 
-    intervalRef.current = setInterval(() => {
-      callNextBall();
-    }, callIntervalMs ?? 3500);
+    s.on("connect", () => {
+      s.emit("join_room", { roomId, clientId: clientId || telegramId });
+    });
+
+    s.on("room_state", (state: any) => {
+      if (Array.isArray(state?.calledNumbers)) {
+        setCalledNumbers(state.calledNumbers);
+      }
+      if (state?.currentBall) {
+        setCurrentBall(state.currentBall);
+      }
+      if (typeof state?.derash === "number") {
+        setServerDerash(state.derash);
+      }
+      if (typeof state?.ticketsCount === "number") {
+        setServerPlayersCount(state.ticketsCount);
+      }
+      if (state?.status === "WAITING") {
+        if (onNextRound) onNextRound();
+      }
+    });
+
+    s.on("ball_called", (data: any) => {
+      if (data?.ball) {
+        setCurrentBall(data.ball);
+        playBallSound(data.ball.num);
+      }
+      if (Array.isArray(data?.calledNumbers)) {
+        setCalledNumbers(data.calledNumbers);
+      }
+    });
+
+    s.on("game_won", (data: any) => {
+      const winningCard = data?.winningCartelaNo;
+      const isUserWinner = cartelaNumbers.includes(winningCard);
+
+      if (isUserWinner && onWinPrize && !hasAwardedPrizeRef.current) {
+        hasAwardedPrizeRef.current = true;
+        onWinPrize(data?.derash ?? derash);
+      }
+
+      setWinnerData({
+        winners: Array.isArray(data?.winners) && data.winners.length > 0
+          ? data.winners
+          : [{ name: isUserWinner ? "You (ተጫዋች)" : `Player #${winningCard}`, avatar: isUserWinner ? "U" : "P", cardNo: winningCard }],
+        winningCartelaNo: winningCard,
+        winningPatternKeys: new Set(data?.winningPatternKeys || []),
+      });
+
+      playBingoWinSound();
+    });
+
+    setSocket(s);
+
+    // Initial fetch of room state to catch up immediately if joining mid-game
+    fetch(`${API_BASE_URL}/api/rooms/${roomId}/state`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.ok && data.state) {
+          const st = data.state;
+          if (Array.isArray(st.calledNumbers)) setCalledNumbers(st.calledNumbers);
+          if (st.currentBall) setCurrentBall(st.currentBall);
+          if (typeof st.derash === "number") setServerDerash(st.derash);
+          if (typeof st.ticketsCount === "number") setServerPlayersCount(st.ticketsCount);
+        }
+      })
+      .catch(() => {});
+
+    // Periodic sync poll every 2.5s
+    const pollTimer = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/state`);
+        const data = await res.json();
+        if (data.ok && data.state) {
+          const st = data.state;
+          if (Array.isArray(st.calledNumbers)) setCalledNumbers(st.calledNumbers);
+          if (st.currentBall) setCurrentBall(st.currentBall);
+          if (st.status === "WAITING") {
+            if (onNextRound) onNextRound();
+          }
+        }
+      } catch {}
+    }, 2500);
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      clearInterval(pollTimer);
+      s.disconnect();
     };
-  }, [callIntervalMs, freeCenter]);
-
-  // Stop caller once someone wins
-  useEffect(() => {
-    if (winnerData && intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-  }, [winnerData]);
+  }, [roomId, clientId, telegramId, cartelaNumbers, onWinPrize, derash, onNextRound]);
 
   // If Automatic is enabled, automatically mark matching numbers on user's cartela
   useEffect(() => {
-    if (!isAutomatic || !currentBall || isWatchingOnly) return;
+    if (!isAutomatic || isWatchingOnly || calledNumbers.length === 0) return;
 
     setMarkedCells((prev) => {
       const next = { ...prev };
+      const calledSet = new Set(calledNumbers);
+
       cartelaNumbers.forEach((cNum) => {
         const grid = generateDeterministicCartela(cNum);
         const userSet = new Set(next[cNum] || (freeCenter ? ["2-2"] : []));
@@ -221,7 +300,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
         for (let r = 0; r < 5; r++) {
           for (let c = 0; c < 5; c++) {
             if (freeCenter && r === 2 && c === 2) continue; // center free
-            if (grid[r][c] === currentBall.num) {
+            if (calledSet.has(grid[r][c])) {
               userSet.add(`${r}-${c}`);
             }
           }
@@ -230,8 +309,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       });
       return next;
     });
-  }, [currentBall, isAutomatic, cartelaNumbers, isWatchingOnly, freeCenter]);
-
+  }, [calledNumbers, isAutomatic, cartelaNumbers, isWatchingOnly, freeCenter]);
   // Check winning line pattern on a specific cartela grid
   const checkGridWin = (grid: number[][], calledSet: Set<number>): { hasWon: boolean; winningKeys: Set<string> } => {
     const isMarked = (r: number, c: number) => {
@@ -366,6 +444,9 @@ export const LiveGame: React.FC<LiveGameProps> = ({
 
   const handleBingoClick = () => {
     if (isWatchingOnly) return;
+    if (socket && roomId) {
+      socket.emit("claim_bingo", { roomId, cartelaNo: activeCartelaNo });
+    }
     const grid = generateDeterministicCartela(activeCartelaNo);
     const res = checkGridWin(grid, new Set(calledNumbers));
     if (res.hasWon) {

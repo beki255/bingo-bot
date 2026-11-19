@@ -63,6 +63,7 @@ export interface WinnerResult {
   winners: Array<{ name: string; avatar: string; cardNo: number }>;
   winningCartelaNo: number;
   winningPatternKeys: string[];
+  derash?: number;
 }
 
 export class GameRoundService {
@@ -154,6 +155,34 @@ export class GameRoundService {
       socket.on("select_cards", (data: { roomId: string; clientId: string; cards: number[] }) => {
         if (!data?.roomId) return;
         this.setClientSelection(data.roomId, data.clientId || currentClient, data.cards || []);
+      });
+
+      socket.on("claim_bingo", async (data: { roomId: string; cartelaNo: number }) => {
+        if (!data?.roomId || !data?.cartelaNo) return;
+        const round = await prisma.gameRound.findFirst({
+          where: { roomId: data.roomId, status: "RUNNING" },
+          include: {
+            room: true,
+            tickets: {
+              include: {
+                user: { select: { id: true, firstName: true, username: true } },
+              },
+            },
+          },
+        });
+        if (!round) return;
+        const targetTicket = round.tickets.find((t) => t.cartelaNumber === data.cartelaNo);
+        if (!targetTicket) return;
+        const grid = generateDeterministicCartela(data.cartelaNo);
+        const win = checkCartelaWin(grid, new Set(round.calledNumbers), round.room?.freeCenter ?? true);
+        if (win.hasWon) {
+          const callTimer = this.callTimers.get(data.roomId);
+          if (callTimer) {
+            clearInterval(callTimer);
+            this.callTimers.delete(data.roomId);
+          }
+          await this.handleWinner(data.roomId, round.id, [{ ticket: targetTicket, keys: win.winningKeys }]);
+        }
       });
 
       socket.on("disconnect", () => {
@@ -437,6 +466,40 @@ export class GameRoundService {
    * Starts ball drawing every 3.5 seconds and checks real tickets for winner
    */
   async startRunningGame(roomId: string, roundId: string) {
+    // 1. Convert any remaining pending selections in this room into registered tickets
+    const roomPending = this.pendingSelections.get(roomId);
+    if (roomPending && roomPending.size > 0) {
+      for (const [clientId, cards] of roomPending.entries()) {
+        if (!cards || cards.length === 0) continue;
+        const numericId = String(clientId).replace(/\D/g, "");
+        const tgId = BigInt(numericId.length > 0 ? numericId : "999001");
+        try {
+          await this.buyTickets({
+            roomId,
+            telegramId: tgId,
+            cartelaNumbers: cards,
+          });
+        } catch {}
+      }
+      this.pendingSelections.delete(roomId);
+    }
+
+    // 2. Check that the round actually has tickets to play
+    const currentRound = await prisma.gameRound.findUnique({
+      where: { id: roundId },
+      include: { tickets: true, room: true },
+    });
+
+    if (!currentRound || currentRound.tickets.length === 0) {
+      await prisma.gameRound.update({
+        where: { id: roundId },
+        data: { status: "WAITING", countdownEndsAt: null },
+      });
+      const st = await this.getRoomState(roomId);
+      this.broadcastRoomState(roomId, st);
+      return;
+    }
+
     // Generate shuffled deck 1-75
     const deck = Array.from({ length: 75 }, (_, i) => i + 1);
     for (let i = deck.length - 1; i > 0; i--) {
@@ -584,6 +647,7 @@ export class GameRoundService {
       })),
       winningCartelaNo: winningTickets[0].ticket.cartelaNumber,
       winningPatternKeys: Array.from(winningTickets[0].keys),
+      derash: splitPrize,
     };
 
     this.emitEvent(roomId, "game_won", winnersPayload);

@@ -172,8 +172,20 @@ export default function App() {
     handleRefreshUserData();
   }, []);
 
-  const handleSelectRoom = (room: Room) => {
+  const handleSelectRoom = async (room: Room) => {
     setSelectedRoom(room);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/rooms/${room.id}/state`);
+      const data = await res.json();
+      if (data.ok && data.state) {
+        if (data.state.status === "RUNNING") {
+          // Ongoing game currently active: enter directly as spectator in Watching Only mode
+          setPlayingCards([]);
+          setRegisteredRoundCards(data.state.takenCards || []);
+          return;
+        }
+      }
+    } catch {}
     setPlayingCards(null);
     setRegisteredRoundCards([]);
   };
@@ -189,6 +201,9 @@ export default function App() {
       {/* 1. Live In-Game Screen (Active Players & Watching Only Spectators) */}
       {activeTab === "game" && selectedRoom && playingCards !== null ? (
         <LiveGame
+          roomId={selectedRoom.id}
+          telegramId={getTelegramId()}
+          clientId={getTelegramId()}
           stake={selectedRoom.stakeAmount}
           houseCutPercent={selectedRoom.houseCutPercent ?? 20}
           callIntervalMs={selectedRoom.callIntervalMs ?? 3500}

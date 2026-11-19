@@ -107,6 +107,37 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
         }
       } else if (state?.status === "WAITING") {
         setIsCountdownRunning(false);
+      } else if (state?.status === "RUNNING") {
+        // Game has started on the server! Transition immediately to LiveGame!
+        if (onConfirmPlayRef.current) {
+          const unpaidCards = selectedCardsRef.current.filter(
+            (c) => !lockedUserCardsRef.current.includes(c)
+          );
+          if (unpaidCards.length > 0) {
+            const unpaidCost = unpaidCards.length * stake;
+            if (onDeductBalance) onDeductBalance(unpaidCost);
+            if (roomId && telegramId) {
+              fetch(`${API_BASE_URL}/api/rooms/${roomId}/buy`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ telegramId, cartelaNumbers: unpaidCards }),
+              }).catch(() => {});
+            }
+            setLockedUserCards((p) => [...p, ...unpaidCards]);
+            lockedUserCardsRef.current = [...lockedUserCardsRef.current, ...unpaidCards];
+          }
+          const userPlayingCards = Array.from(
+            new Set([...lockedUserCardsRef.current, ...selectedCardsRef.current])
+          );
+          const allRoundCards = Array.from(
+            new Set([
+              ...registeredCardsRef.current,
+              ...selectedCardsRef.current,
+              ...otherPendingSelectionsRef.current,
+            ])
+          );
+          onConfirmPlayRef.current(userPlayingCards, allRoundCards);
+        }
       }
     });
 
@@ -145,6 +176,36 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
             }
           } else if (st.status === "WAITING") {
             setIsCountdownRunning(false);
+          } else if (st.status === "RUNNING") {
+            if (onConfirmPlayRef.current) {
+              const unpaidCards = selectedCardsRef.current.filter(
+                (c) => !lockedUserCardsRef.current.includes(c)
+              );
+              if (unpaidCards.length > 0) {
+                const unpaidCost = unpaidCards.length * stake;
+                if (onDeductBalance) onDeductBalance(unpaidCost);
+                if (roomId && telegramId) {
+                  fetch(`${API_BASE_URL}/api/rooms/${roomId}/buy`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ telegramId, cartelaNumbers: unpaidCards }),
+                  }).catch(() => {});
+                }
+                setLockedUserCards((p) => [...p, ...unpaidCards]);
+                lockedUserCardsRef.current = [...lockedUserCardsRef.current, ...unpaidCards];
+              }
+              const userPlayingCards = Array.from(
+                new Set([...lockedUserCardsRef.current, ...selectedCardsRef.current])
+              );
+              const allRoundCards = Array.from(
+                new Set([
+                  ...registeredCardsRef.current,
+                  ...selectedCardsRef.current,
+                  ...otherPendingSelectionsRef.current,
+                ])
+              );
+              onConfirmPlayRef.current(userPlayingCards, allRoundCards);
+            }
           }
         }
       } catch {}
