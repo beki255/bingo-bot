@@ -37,6 +37,17 @@ export function createApp() {
     res.type("text/plain").send("OK");
   });
 
+  app.get(["/favicon.ico", "/favicon.svg"], (_req, res) => {
+    const adminFav = path.resolve(__dirname, "../../admin-web/dist/favicon.svg");
+    const miniFav = path.resolve(__dirname, "../../mini-app/dist/favicon.svg");
+    const target = fs.existsSync(adminFav) ? adminFav : fs.existsSync(miniFav) ? miniFav : null;
+    if (target) {
+      res.type("image/svg+xml").sendFile(target);
+    } else {
+      res.status(204).end();
+    }
+  });
+
   // Admin Web Portal API
   app.use("/api/admin", createAdminRouter());
 
