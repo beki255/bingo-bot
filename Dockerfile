@@ -8,6 +8,7 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY apps/mini-app/package.json ./apps/mini-app/
+COPY apps/admin-web/package.json ./apps/admin-web/
 COPY apps/server/package.json ./apps/server/
 
 # Install dependencies
@@ -16,6 +17,7 @@ RUN pnpm install --frozen-lockfile
 # Copy sources
 COPY packages/shared ./packages/shared
 COPY apps/mini-app ./apps/mini-app
+COPY apps/admin-web ./apps/admin-web
 COPY apps/server ./apps/server
 
 # Generate Prisma client and build

@@ -5,6 +5,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { env } from "./config/env.js";
+import { createAdminRouter } from "./routes/adminRouter.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,6 +36,9 @@ export function createApp() {
   app.get("/ping", (_req, res) => {
     res.type("text/plain").send("OK");
   });
+
+  // Admin Web Portal API
+  app.use("/api/admin", createAdminRouter());
 
   app.get("/api/rooms", async (_req, res) => {
     try {
@@ -307,6 +311,15 @@ export function createApp() {
     }
   });
 
+  // Serve built Admin Web Portal at /admin
+  const adminWebDist = path.resolve(__dirname, "../../admin-web/dist");
+  if (fs.existsSync(adminWebDist)) {
+    app.use("/admin", express.static(adminWebDist));
+    app.use("/admin", (_req, res) => {
+      res.sendFile(path.join(adminWebDist, "index.html"));
+    });
+  }
+
   // Serve built Mini-App frontend directly
   const miniAppDist = path.resolve(__dirname, "../../mini-app/dist");
   if (fs.existsSync(miniAppDist)) {
@@ -314,7 +327,9 @@ export function createApp() {
     app.use((req, res, next) => {
       if (
         req.path.startsWith("/api") ||
+        req.path.startsWith("/admin") ||
         req.path.startsWith("/health") ||
+        req.path.startsWith("/ping") ||
         req.path.startsWith("/socket.io")
       ) {
         return next();

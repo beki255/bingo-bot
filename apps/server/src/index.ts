@@ -1,4 +1,5 @@
 import http from "node:http";
+import bcrypt from "bcryptjs";
 import { Server as SocketIOServer } from "socket.io";
 import { env } from "./config/env.js";
 import { prisma } from "./db/prisma.js";
@@ -38,23 +39,46 @@ async function main() {
           ],
         });
       }
+      console.log("Database initialized successfully!");
+    }
 
-      if (env.superAdminTelegramId) {
-        const adminTgId = BigInt(env.superAdminTelegramId);
-        const existingAdmin = await prisma.user.findUnique({ where: { telegramId: adminTgId } });
-        if (!existingAdmin) {
-          await prisma.user.create({
-            data: {
-              telegramId: adminTgId,
-              firstName: "Super Admin",
-              role: "SUPER_ADMIN",
-              referralCode: "ADMIN77",
-              wallet: { create: { balance: 0 } },
-            },
+    // Always ensure SUPER_ADMIN user exists and has web portal credentials initialized
+    if (env.superAdminTelegramId) {
+      const adminTgId = BigInt(env.superAdminTelegramId);
+      const existingAdmin = await prisma.user.findUnique({ where: { telegramId: adminTgId } });
+      if (!existingAdmin) {
+        const passwordHash = await bcrypt.hash(env.superAdminPassword, 10);
+        await prisma.user.create({
+          data: {
+            telegramId: adminTgId,
+            firstName: "Super Admin",
+            username: env.superAdminUsername || "admin",
+            role: "SUPER_ADMIN",
+            passwordHash,
+            referralCode: "ADMIN77",
+            wallet: { create: { balance: 0 } },
+          },
+        });
+        console.log(`Initialized SUPER_ADMIN account (username: ${env.superAdminUsername || "admin"}).`);
+      } else {
+        const updates: { role?: "SUPER_ADMIN"; passwordHash?: string; username?: string } = {};
+        if (existingAdmin.role !== "SUPER_ADMIN") {
+          updates.role = "SUPER_ADMIN";
+        }
+        if (!existingAdmin.passwordHash) {
+          updates.passwordHash = await bcrypt.hash(env.superAdminPassword, 10);
+        }
+        if (!existingAdmin.username) {
+          updates.username = env.superAdminUsername || "admin";
+        }
+        if (Object.keys(updates).length > 0) {
+          await prisma.user.update({
+            where: { id: existingAdmin.id },
+            data: updates,
           });
+          console.log(`Synced SUPER_ADMIN web credentials (username: ${updates.username || existingAdmin.username}).`);
         }
       }
-      console.log("Database initialized successfully!");
     }
   } catch (initErr) {
     console.error("Database auto-init warning:", initErr);

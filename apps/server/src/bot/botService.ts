@@ -133,6 +133,49 @@ class BotService {
     }
   }
 
+  async sendDirectMessage(
+    telegramId: bigint | string,
+    text: string
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!this.bot) return { ok: false, error: "BOT_NOT_RUNNING" };
+    try {
+      await this.bot.api.sendMessage(telegramId.toString(), text, { parse_mode: "HTML" });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "SEND_FAILED" };
+    }
+  }
+
+  emitAdminEvent(event: string, payload: unknown) {
+    this.io?.to("admins").emit(event, payload);
+  }
+
+  async getTelegramFileBuffer(
+    fileId: string
+  ): Promise<{ buffer: Buffer; contentType: string } | null> {
+    if (!this.bot || !env.botToken) return null;
+    try {
+      const file = await this.bot.api.getFile(fileId);
+      if (!file.file_path) return null;
+      const url = `https://api.telegram.org/file/bot${env.botToken}/${file.file_path}`;
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const arrayBuf = await res.arrayBuffer();
+      const lower = file.file_path.toLowerCase();
+      const contentType = lower.endsWith(".png")
+        ? "image/png"
+        : lower.endsWith(".webp")
+          ? "image/webp"
+          : lower.endsWith(".gif")
+            ? "image/gif"
+            : "image/jpeg";
+      return { buffer: Buffer.from(arrayBuf), contentType };
+    } catch (err) {
+      console.error("Failed to fetch Telegram file:", err);
+      return null;
+    }
+  }
+
   private shareContactKeyboard(lang: Language) {
     return new Keyboard()
       .requestContact(lang === "AM" ? "📞 ስልክ ቁጥር አጋራ" : "📞 Share contact")

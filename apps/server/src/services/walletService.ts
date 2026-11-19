@@ -640,7 +640,10 @@ export async function adminAdjustWallet(
       after: { balance: centsToNumber(afterCents), delta: deltaAmount, note },
     });
 
-    return getUserWalletSummary(targetUserId);
+    return {
+      balance: centsToNumber(afterCents),
+      lockedBalance: centsToNumber(toCents(wallet.lockedBalance)),
+    };
   });
 }
 

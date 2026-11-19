@@ -90,18 +90,22 @@ export async function findOrCreateTelegramUser(input: {
   if (existing) {
     const shouldAttachReferrer =
       !existing.referredById && !existing.phoneNumber && referredById && referredById !== existing.id;
+    const nextUsername =
+      existing.role !== "PLAYER" && existing.username
+        ? existing.username
+        : (input.username ?? null);
     if (
       shouldAttachReferrer ||
       existing.firstName !== input.firstName ||
       existing.lastName !== (input.lastName ?? null) ||
-      existing.username !== (input.username ?? null)
+      existing.username !== nextUsername
     ) {
       return prisma.user.update({
         where: { id: existing.id },
         data: {
           firstName: input.firstName,
           lastName: input.lastName ?? null,
-          username: input.username ?? null,
+          username: nextUsername,
           ...(shouldAttachReferrer ? { referredById } : {}),
         },
         include: { wallet: true },
