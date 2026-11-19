@@ -19,6 +19,7 @@ export const env = {
   supportUsername: (process.env.SUPPORT_USERNAME || "").trim(),
   miniAppUrl: process.env.MINI_APP_URL || "http://localhost:5173",
   adminWebUrl: process.env.ADMIN_WEB_URL || "http://localhost:5174",
+  superAdminTelegramId: (process.env.SUPER_ADMIN_TELEGRAM_ID || "7748253327").trim(),
   adminJwtSecret: process.env.ADMIN_JWT_SECRET || "dev_fallback_secret_change_in_prod",
   corsOrigins: (process.env.CORS_ORIGINS || "http://localhost:5173,http://localhost:5174")
     .split(",")
