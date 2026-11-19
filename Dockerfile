@@ -35,4 +35,4 @@ COPY --from=builder /app ./
 
 EXPOSE 3001
 
-CMD ["sh", "-c", "pnpm --filter @bingo/server prisma migrate deploy && node apps/server/dist/index.js"]
+CMD ["sh", "-c", "pnpm --filter @bingo/server prisma db push --accept-data-loss && node apps/server/dist/index.js"]
