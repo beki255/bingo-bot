@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { ArrowLeft, RotateCw, Check, AlertCircle, X, Users } from "lucide-react";
+import { ArrowLeft, RotateCw, Check, AlertCircle, X, Users, Eye } from "lucide-react";
 import { generateDeterministicCartela, BINGO_LETTERS } from "@bingo/shared";
 
 interface CartelaBoardProps {
@@ -57,7 +57,48 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     return set;
   }, [registeredCards, lockedUserCards]);
 
-  // Live countdown timer: triggers ONLY when countdown is active (>= 3 cards registered)
+  // Simulate other players picking cards in this room over time
+  useEffect(() => {
+    const initialTimer = setTimeout(() => {
+      setRegisteredCards((prev) => {
+        if (prev.length >= minPlayers + 6) return prev;
+        const randomCard = Math.floor(Math.random() * cartelaPoolSize) + 1;
+        return prev.includes(randomCard) ? prev : [...prev, randomCard];
+      });
+    }, 1200);
+
+    const interval = setInterval(() => {
+      setRegisteredCards((prev) => {
+        if (prev.length >= minPlayers + 8) return prev;
+        const randomCard = Math.floor(Math.random() * cartelaPoolSize) + 1;
+        return prev.includes(randomCard) ? prev : [...prev, randomCard];
+      });
+    }, 2600);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, [cartelaPoolSize, minPlayers]);
+
+  // When registered cards reach minPlayers threshold, start countdown automatically
+  useEffect(() => {
+    if (registeredCards.length >= minPlayers && !isCountdownRunning) {
+      setIsCountdownRunning(true);
+      setCountdown(countdownSeconds);
+    }
+  }, [registeredCards.length, minPlayers, isCountdownRunning, countdownSeconds]);
+
+  const lockedUserCardsRef = useRef(lockedUserCards);
+  lockedUserCardsRef.current = lockedUserCards;
+
+  const registeredCardsRef = useRef(registeredCards);
+  registeredCardsRef.current = registeredCards;
+
+  const onConfirmPlayRef = useRef(onConfirmPlay);
+  onConfirmPlayRef.current = onConfirmPlay;
+
+  // Live countdown timer: triggers ONLY when countdown is active (>= minPlayers cards registered)
   useEffect(() => {
     if (!isCountdownRunning) return;
 
@@ -65,8 +106,11 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(interval);
-          if (onConfirmPlay) {
-            onConfirmPlay(lockedUserCards, registeredCards);
+          if (onConfirmPlayRef.current) {
+            // When countdown finishes, everyone enters the live game:
+            // - If user confirmed cards, they enter as active player
+            // - If user didn't pick/lock cards, they enter as spectator in "Watching Only" mode!
+            onConfirmPlayRef.current(lockedUserCardsRef.current, registeredCardsRef.current);
           }
           return 0;
         }
@@ -75,9 +119,12 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isCountdownRunning, lockedUserCards, registeredCards, onConfirmPlay]);
+  }, [isCountdownRunning]);
 
   const handleCardClick = (num: number) => {
+    // If cards already confirmed, cannot alter
+    if (lockedUserCards.length > 0) return;
+
     // If card is already taken by someone else
     if (takenCardsSet.has(num)) {
       showToast(`ካርቴላ #${num} በሌላ ተጫዋች ተይዟል (Already taken)`);
@@ -95,7 +142,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     const requiredBalance = nextCount * stake;
 
     if (userBalance < requiredBalance) {
-      showToast("Insufficient wallet balance.");
+      showToast("ቀሪ ሂሳብዎ በቂ ስላልሆነ መምረጥ አይችሉም። ተመልካች ሆነው ይከታተሉ (Watching Only)");
       return;
     }
 
@@ -138,41 +185,14 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     const userCards = [...selectedCards];
     setLockedUserCards(userCards);
 
-    // 3. Room minPlayers threshold business logic:
-    // When players join, meet the minPlayers minimum to start countdown
-    let allCards = [...registeredCards, ...userCards];
-    if (allCards.length < minPlayers) {
-      const needed = minPlayers - allCards.length;
-      const otherCards: number[] = [];
-      while (otherCards.length < needed) {
-        const randomCard = Math.floor(Math.random() * cartelaPoolSize) + 1;
-        if (!allCards.includes(randomCard) && !otherCards.includes(randomCard)) {
-          otherCards.push(randomCard);
-        }
-      }
-      allCards = [...allCards, ...otherCards];
-    }
-
-    setRegisteredCards(allCards);
-    setIsCountdownRunning(true);
-    setCountdown(countdownSeconds);
-  };
-
-  const handleEnterAsSpectator = () => {
-    let allCards = [...registeredCards];
-    if (allCards.length < minPlayers) {
-      const otherCards: number[] = [];
-      while (otherCards.length < minPlayers) {
-        const randomCard = Math.floor(Math.random() * cartelaPoolSize) + 1;
-        if (!allCards.includes(randomCard) && !otherCards.includes(randomCard)) {
-          otherCards.push(randomCard);
-        }
-      }
-      allCards = [...allCards, ...otherCards];
-    }
-    if (onConfirmPlay) {
-      onConfirmPlay([], allCards);
-    }
+    // 3. Register user cards into room
+    setRegisteredCards((prev) => {
+      const combined = [...prev];
+      userCards.forEach((c) => {
+        if (!combined.includes(c)) combined.push(c);
+      });
+      return combined;
+    });
   };
 
   return (
@@ -216,14 +236,18 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
         </button>
 
         <div className="flex items-center gap-2">
-          {/* Watching Only shortcut button */}
-          <button
-            onClick={handleEnterAsSpectator}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-purple-600/30 hover:bg-purple-600/40 text-[11px] font-bold text-purple-300 border border-purple-500/30 transition"
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>Watching Only</span>
-          </button>
+          {/* Watching Only Status Badge (Non-clickable visual indicator) */}
+          {lockedUserCards.length > 0 ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-[11px] font-bold text-emerald-300 border border-emerald-500/30">
+              <Check className="w-3.5 h-3.5" />
+              <span>ተጫዋች (#{lockedUserCards.join(", ")})</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-600/25 text-[11px] font-bold text-purple-300 border border-purple-500/30">
+              <Eye className="w-3.5 h-3.5" />
+              <span>Watching Only</span>
+            </div>
+          )}
 
           <button
             onClick={() => {
@@ -338,12 +362,22 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
         </div>
       )}
 
-      {/* Bottom Sticky Action Bar: Confirm / Buy */}
+      {/* Bottom Sticky Action Bar: Confirm / Buy or Watching Only Info */}
       <div className="fixed bottom-14 left-0 right-0 z-30 px-4 py-2 bg-[#0e1022]/95 backdrop-blur-md border-t border-white/10 max-w-md mx-auto">
         {lockedUserCards.length > 0 ? (
           <div className="w-full py-3 px-4 rounded-xl bg-emerald-600/90 text-white font-extrabold text-xs flex items-center justify-between shadow-lg">
             <span>✅ {lockedUserCards.length} ካርቴላ ተመዝግቧል (#{lockedUserCards.join(", ")})</span>
             <span className="text-amber-300">{countdown}s ውስጥ ይጀምራል</span>
+          </div>
+        ) : userBalance < stake ? (
+          <div className="w-full py-3 px-4 rounded-xl bg-purple-950/80 border border-purple-500/30 text-purple-200 text-xs font-bold flex items-center justify-between shadow-lg">
+            <div className="flex items-center gap-2">
+              <Eye className="w-4 h-4 text-purple-400 shrink-0" />
+              <span>ቀሪ ሂሳብ የለዎትም (Watching Only)</span>
+            </div>
+            <span className="text-amber-300 font-extrabold text-xs shrink-0">
+              {isCountdownRunning ? `⏳ ${countdown}s` : `⏳ ${registeredCards.length}/${minPlayers}`}
+            </span>
           </div>
         ) : (
           <button
