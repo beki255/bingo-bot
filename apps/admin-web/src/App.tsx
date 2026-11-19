@@ -153,7 +153,7 @@ export default function App() {
   const meta = TAB_META[activeTab];
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#080b12] text-white">
+    <div className="flex h-screen w-screen overflow-hidden bg-slate-100 dark:bg-[#080b12] text-slate-900 dark:text-white transition-colors">
       <Sidebar
         activeTab={activeTab}
         onSelectTab={setActiveTab}
@@ -177,7 +177,7 @@ export default function App() {
           onToggleTheme={toggleTheme}
         />
 
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#080b12] transition-colors">
           {activeTab === "dashboard" && (
             <DashboardView onNavigate={setActiveTab} refreshSignal={refreshSignal} />
           )}

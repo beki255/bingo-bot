@@ -1483,6 +1483,24 @@ class BotService {
       }
 
       if (this.isAdminRole(user.role)) {
+        await ctx.reply(
+          user.language === "AM"
+            ? "🛡️ <b>የአድሚን ካሺየር ቦት</b>"
+            : "🛡️ <b>Admin Cashier Bot</b>",
+          { parse_mode: "HTML", reply_markup: { remove_keyboard: true } }
+        ).catch(() => {});
+        if (ctx.chat) {
+          await bot.api
+            .setMyCommands(
+              [
+                { command: "admin", description: "Admin Cashier Panel" },
+                { command: "adminlogin", description: "Web Login OTP Code" },
+                { command: "lang", description: "Switch Language / ቋንቋ" },
+              ],
+              { scope: { type: "chat", chat_id: ctx.chat.id } }
+            )
+            .catch(() => {});
+        }
         await this.sendAdminPanel((text, opts) => ctx.reply(text, opts), user);
         return;
       }
@@ -1508,12 +1526,28 @@ class BotService {
       const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from.id) } });
       if (!user || !this.isAdminRole(user.role) || user.isBanned) return;
       await this.setBotState(user.id, null);
+      if (ctx.chat) {
+        await bot.api
+          .setMyCommands(
+            [
+              { command: "admin", description: "Admin Cashier Panel" },
+              { command: "adminlogin", description: "Web Login OTP Code" },
+              { command: "lang", description: "Switch Language / ቋንቋ" },
+            ],
+            { scope: { type: "chat", chat_id: ctx.chat.id } }
+          )
+          .catch(() => {});
+      }
       await this.sendAdminPanel((text, opts) => ctx.reply(text, opts), user);
     });
 
     bot.command("register", async (ctx) => {
       const user = await ensureOnboarded(ctx, { allowUnregistered: true });
       if (!user) return;
+      if (this.isAdminRole(user.role)) {
+        await this.sendAdminPanel((text, opts) => ctx.reply(text, opts), user);
+        return;
+      }
       const lang: Language = user.language || "AM";
       if (user.phoneNumber) {
         await ctx.reply(
@@ -1529,6 +1563,10 @@ class BotService {
     bot.command("play", async (ctx) => {
       const user = await ensureOnboarded(ctx);
       if (!user) return;
+      if (this.isAdminRole(user.role)) {
+        await this.sendAdminPanel((text, opts) => ctx.reply(text, opts), user);
+        return;
+      }
       await this.setBotState(user.id, null);
       await this.sendPlayPrompt(user.language!, (text, opts) => ctx.reply(text, opts));
     });
@@ -1536,6 +1574,10 @@ class BotService {
     bot.command("balance", async (ctx) => {
       const user = await ensureOnboarded(ctx);
       if (!user) return;
+      if (this.isAdminRole(user.role)) {
+        await this.sendAdminPanel((text, opts) => ctx.reply(text, opts), user);
+        return;
+      }
       await this.setBotState(user.id, null);
       const w = await getUserWalletSummary(user.id);
       await this.sendBalanceCard((text, opts) => ctx.reply(text, opts), user, w.balance);
@@ -1544,12 +1586,20 @@ class BotService {
     bot.command("deposit", async (ctx) => {
       const user = await ensureOnboarded(ctx);
       if (!user) return;
+      if (this.isAdminRole(user.role)) {
+        await this.sendAdminPanel((text, opts) => ctx.reply(text, opts), user);
+        return;
+      }
       await this.startDepositFlow(user.id, user.language!, (text, opts) => ctx.reply(text, opts));
     });
 
     bot.command("withdraw", async (ctx) => {
       const user = await ensureOnboarded(ctx);
       if (!user) return;
+      if (this.isAdminRole(user.role)) {
+        await this.sendAdminPanel((text, opts) => ctx.reply(text, opts), user);
+        return;
+      }
       await this.setBotState(user.id, null);
       await this.startWithdrawFlow(user.id, user.language!, (text, opts) => ctx.reply(text, opts));
     });
@@ -1557,12 +1607,20 @@ class BotService {
     bot.command("transfer", async (ctx) => {
       const user = await ensureOnboarded(ctx);
       if (!user) return;
+      if (this.isAdminRole(user.role)) {
+        await this.sendAdminPanel((text, opts) => ctx.reply(text, opts), user);
+        return;
+      }
       await this.startTransferFlow(user.id, user.language!, (text, opts) => ctx.reply(text, opts));
     });
 
     bot.command("invite", async (ctx) => {
       const user = await ensureOnboarded(ctx);
       if (!user) return;
+      if (this.isAdminRole(user.role)) {
+        await this.sendAdminPanel((text, opts) => ctx.reply(text, opts), user);
+        return;
+      }
       await this.setBotState(user.id, null);
       await this.sendInviteInfo(user, (text, opts) => ctx.reply(text, opts));
     });
@@ -1570,6 +1628,10 @@ class BotService {
     bot.command("instruction", async (ctx) => {
       const user = await ensureOnboarded(ctx);
       if (!user) return;
+      if (this.isAdminRole(user.role)) {
+        await this.sendAdminPanel((text, opts) => ctx.reply(text, opts), user);
+        return;
+      }
       await this.setBotState(user.id, null);
       await this.sendInstruction(user.language!, (text, opts) => ctx.reply(text, opts));
     });
@@ -1577,6 +1639,10 @@ class BotService {
     bot.command("support", async (ctx) => {
       const user = await ensureOnboarded(ctx);
       if (!user) return;
+      if (this.isAdminRole(user.role)) {
+        await this.sendAdminPanel((text, opts) => ctx.reply(text, opts), user);
+        return;
+      }
       await this.setBotState(user.id, null);
       await this.sendSupport(user.language!, (text, opts) => ctx.reply(text, opts));
     });
@@ -1592,6 +1658,13 @@ class BotService {
       if (user.isBanned) return;
       if (await this.isBlockedByMaintenance(user, (t, opts) => ctx.reply(t, opts))) return;
       await this.setBotState(user.id, null);
+      if (this.isAdminRole(user.role)) {
+        const kb = new InlineKeyboard()
+          .text("🇪🇹 አማርኛ", "adm:set_lang:AM")
+          .text("🇬🇧 English", "adm:set_lang:EN");
+        await ctx.reply("🌐 የአድሚን ቦት ቋንቋ ይምረጡ / Choose Admin Bot language:", { reply_markup: kb });
+        return;
+      }
       await this.sendLanguagePrompt(ctx);
     });
 
@@ -1770,6 +1843,19 @@ class BotService {
           });
           await ctx.answerCallbackQuery({
             text: nextLang === "AM" ? "ቋንቋ ወደ አማርኛ ተቀይሯል" : "Language set to English",
+          });
+          await this.sendAdminPanel((t, opts) => ctx.reply(t, opts), updated);
+          return;
+        }
+
+        if (data === "adm:set_lang:AM" || data === "adm:set_lang:EN") {
+          const chosen: Language = data === "adm:set_lang:AM" ? "AM" : "EN";
+          const updated = await prisma.user.update({
+            where: { id: caller.id },
+            data: { language: chosen },
+          });
+          await ctx.answerCallbackQuery({
+            text: chosen === "AM" ? "ቋንቋ ወደ አማርኛ ተቀይሯል" : "Language set to English",
           });
           await this.sendAdminPanel((t, opts) => ctx.reply(t, opts), updated);
           return;
@@ -1983,18 +2069,7 @@ class BotService {
           return;
         }
 
-        if (data === "adm:player_view") {
-          await this.setBotState(caller.id, null);
-          await ctx.answerCallbackQuery();
-          await this.sendLanguagePrompt(ctx);
-          await ctx.reply(
-            adminLang === "AM"
-              ? "👤 <b>Player View</b> — ከላይ ቋንቋ በመምረጥ ይቀጥሉ። ወደ Admin Panel ለመመለስ /admin ወይም /start ይላኩ።"
-              : "👤 <b>Player View</b> — Pick a language above to continue. Send /admin or /start anytime to return to the Admin Panel.",
-            { parse_mode: "HTML" }
-          );
-          return;
-        }
+
       }
 
       // Admin/Cashier resolution buttons (work directly without player language/phone gates)
@@ -2153,10 +2228,15 @@ class BotService {
       // Language selection FIRST
       if (data === "set_lang:AM" || data === "set_lang:EN") {
         const chosen: Language = data === "set_lang:AM" ? "AM" : "EN";
-        await prisma.user.update({ where: { id: caller.id }, data: { language: chosen } });
+        const updated = await prisma.user.update({ where: { id: caller.id }, data: { language: chosen } });
         await ctx.answerCallbackQuery();
 
-        if (!caller.phoneNumber && !this.isAdminRole(caller.role)) {
+        if (this.isAdminRole(caller.role)) {
+          await this.sendAdminPanel((t, opts) => ctx.reply(t, opts), updated);
+          return;
+        }
+
+        if (!caller.phoneNumber) {
           await this.sendRegisterRequired(ctx, chosen);
           return;
         }
@@ -2165,6 +2245,15 @@ class BotService {
           (text, opts) => ctx.reply(text, opts),
           chosen
         );
+        return;
+      }
+
+      // If caller is Admin/Cashier, isolate them completely from player menu flows
+      if (this.isAdminRole(caller.role)) {
+        await ctx.answerCallbackQuery({
+          text: caller.language === "AM" ? "ይህ የአድሚን አካውንት ነው" : "Admin account",
+        });
+        await this.sendAdminPanel((t, opts) => ctx.reply(t, opts), caller);
         return;
       }
 
@@ -2439,6 +2528,11 @@ class BotService {
         rawState &&
         (await this.handleAdminTextState(rawUser, rawState, text, (t, opts) => ctx.reply(t, opts)))
       ) {
+        return;
+      }
+
+      if (this.isAdminRole(rawUser.role)) {
+        await this.sendAdminPanel((t, opts) => ctx.reply(t, opts), rawUser);
         return;
       }
 

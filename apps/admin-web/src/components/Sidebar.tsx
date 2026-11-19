@@ -95,23 +95,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const content = (
-    <aside className="w-64 h-full bg-[#0b101d] border-r border-[#1a233b] flex flex-col select-none">
+    <aside className="w-64 h-full bg-white dark:bg-[#0b101d] border-r border-slate-200 dark:border-[#1a233b] flex flex-col select-none transition-colors">
       {/* Brand */}
-      <div className="px-5 py-5 border-b border-[#1a233b] flex items-center justify-between">
+      <div className="px-5 py-5 border-b border-slate-200 dark:border-[#1a233b] flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center font-black text-lg text-white shadow-lg shadow-blue-600/30">
             TB
           </div>
           <div>
-            <h1 className="text-sm font-black tracking-tight text-white">Tunnel Bingo</h1>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+            <h1 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">Tunnel Bingo</h1>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-cyan-400">
               Admin Console
             </span>
           </div>
         </div>
         <button
           onClick={onCloseMobile}
-          className="lg:hidden p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/5"
+          className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:text-gray-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5"
         >
           <X className="w-5 h-5" />
         </button>
@@ -126,7 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           if (visibleItems.length === 0) return null;
           return (
             <div key={section.title}>
-              <div className="px-3 mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-500">
+              <div className="px-3 mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500">
                 {section.title}
               </div>
               <div className="flex flex-col gap-1">
@@ -140,7 +140,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition ${
                         active
                           ? "bg-blue-600 text-white shadow-lg shadow-blue-600/25"
-                          : "text-gray-400 hover:text-white hover:bg-[#131b2e]"
+                          : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-[#131b2e]"
                       }`}
                     >
                       <span className="flex items-center gap-2.5">
@@ -168,13 +168,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       {/* Logged in Admin Footer */}
-      <div className="p-3 border-t border-[#1a233b]">
-        <div className="bg-[#0f1628] border border-[#1a233b] rounded-xl p-3 flex items-center justify-between gap-2">
+      <div className="p-3 border-t border-slate-200 dark:border-[#1a233b]">
+        <div className="bg-slate-50 dark:bg-[#0f1628] border border-slate-200 dark:border-[#1a233b] rounded-xl p-3 flex items-center justify-between gap-2 shadow-sm">
           <div className="min-w-0">
-            <div className="text-xs font-bold text-white truncate">{admin.firstName}</div>
-            <div className="text-[10px] text-gray-400 truncate">
+            <div className="text-xs font-bold text-slate-900 dark:text-white truncate">{admin.firstName}</div>
+            <div className="text-[10px] text-slate-500 dark:text-gray-400 truncate">
               @{admin.username || admin.telegramId} •{" "}
-              <span className={isSuperAdmin ? "text-amber-400 font-bold" : "text-cyan-400 font-bold"}>
+              <span className={isSuperAdmin ? "text-amber-600 dark:text-amber-400 font-bold" : "text-blue-600 dark:text-cyan-400 font-bold"}>
                 {isSuperAdmin ? "SUPER ADMIN" : "CASHIER"}
               </span>
             </div>
@@ -182,7 +182,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={onLogout}
             title="Sign Out"
-            className="p-2 rounded-lg text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 transition shrink-0"
+            className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:text-gray-400 dark:hover:text-rose-400 dark:hover:bg-rose-500/10 transition shrink-0"
           >
             <LogOut className="w-4 h-4" />
           </button>
