@@ -96,10 +96,13 @@ async function main() {
   botService.attachIO(io);
   gameRoundService.attachIO(io);
   realtimeService.attachIO(io);
-  await botService.start();
 
   httpServer.listen(env.port, () => {
     console.log(`Bingo server listening on http://localhost:${env.port}`);
+  });
+
+  botService.start().catch((err) => {
+    console.error("BotService start error:", err);
   });
 
   const shutdown = async () => {

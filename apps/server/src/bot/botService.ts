@@ -1469,28 +1469,27 @@ class BotService {
       console.error("Telegram bot error:", err.error);
     });
 
-    // 1. Immediately delete any webhook set by unauthorized scripts and drop queued updates
+    // 1. Clear any webhook with timeout (never block server startup if Telegram times out)
     try {
-      await bot.api.deleteWebhook({ drop_pending_updates: true });
-      console.log("Rogue webhooks cleared, long polling ready.");
-    } catch (e) {
-      console.warn("deleteWebhook note:", e);
+      await Promise.race([
+        bot.api.deleteWebhook({ drop_pending_updates: false }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("deleteWebhook timeout")), 3000)),
+      ]);
+      console.log("Webhooks cleared, long polling ready.");
+    } catch (e: any) {
+      console.warn("deleteWebhook note (proceeding anyway):", e?.description || e?.message || e);
     }
 
-    // 2. Auto-restore bot name and descriptions
-    try {
-      await bot.api.setMyName(env.botName || "Tunnel Bingo").catch(() => {});
-      await bot.api.setMyDescription(
+    // 2. Auto-restore bot name, descriptions, and commands in background without blocking
+    void Promise.allSettled([
+      bot.api.setMyName(env.botName || "Tunnel Bingo"),
+      bot.api.setMyDescription(
         "🎉 ወደ Tunnel Bingo እንኳን በደህና መጡ!\n\nትክክለኛውን የ75-ኳስ ቢንጎ በቀጥታ ከጓደኞችዎ ጋር ይጫወቱ፣ በቴሌብር ፈጣን ክፍያ ገንዘብ ያስገቡ እና ያወጡ።\n\nለመጀመር /start ይበሉ ወይም Play Bingo ይጫኑ!"
-      ).catch(() => {});
-      await bot.api.setMyShortDescription(
+      ),
+      bot.api.setMyShortDescription(
         "Tunnel Bingo - የቀጥታ 75-ኳስ ቢንጎ ጨዋታ። በቴሌብር ፈጣን ክፍያ።"
-      ).catch(() => {});
-    } catch {}
-
-    // Register exact Bot Menu Commands shown in screenshots
-    try {
-      await bot.api.setMyCommands([
+      ),
+      bot.api.setMyCommands([
         { command: "play", description: "🎮 Play Bingo / ቢንጎ ተጫወት" },
         { command: "start", description: "Start / አስጀምር" },
         { command: "balance", description: "Balance / ቀሪ ሂሳብ" },
@@ -1502,15 +1501,11 @@ class BotService {
         { command: "support", description: "Support / እርዳታ" },
         { command: "language", description: "Language / ቋንቋ ቀይር" },
         { command: "register", description: "Register / ይመዝገቡ" },
-      ]);
-
-      // Keep Menu button as "commands" list so users can always access /deposit, /withdraw, /balance, /play, etc.
-      await bot.api.setChatMenuButton({
+      ]),
+      bot.api.setChatMenuButton({
         menu_button: { type: "commands" },
-      }).catch((err) => console.error("Failed setting chat menu button:", err));
-    } catch (err) {
-      console.error("Failed setting bot commands:", err);
-    }
+      }),
+    ]).catch(() => {});
 
     // Helper: fetch or create user and enforce Language -> Registration gate
     const ensureOnboarded = async (
