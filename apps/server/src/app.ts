@@ -6,6 +6,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { env } from "./config/env.js";
 import { createAdminRouter } from "./routes/adminRouter.js";
+import { botService } from "./bot/botService.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,6 +34,15 @@ export function createApp() {
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
+  });
+
+  app.get("/api/bot-status", async (_req, res) => {
+    try {
+      const status = await botService.getStatus();
+      res.json({ ok: true, ...status });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err?.message || String(err) });
+    }
   });
 
   app.get("/ping", (_req, res) => {

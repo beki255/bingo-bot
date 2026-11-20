@@ -116,9 +116,13 @@ function escapeHtml(text: string): string {
 }
 
 class BotService {
-  private bot: Bot | null = null;
+  bot: Bot | null = null;
   private io: SocketIOServer | null = null;
   private cachedBanner: { source: string; fileId: string } | null = null;
+  private isRunning = false;
+  private isStopped = false;
+  private lastPollingError: string | null = null;
+  private botInfo: any = null;
 
   private isAdminRole(role: string): boolean {
     return role === "SUPER_ADMIN" || role === "CASHIER";
@@ -2850,18 +2854,66 @@ class BotService {
       }
     });
 
-    void bot
-      .start({
-        onStart: (info) => {
-          console.log(`Telegram Bot @${info.username} started!`);
-        },
-      })
-      .catch((err) => {
-        console.error("Telegram Bot polling failed:", err);
-      });
+    const startPollingWithRetry = async () => {
+      while (!this.isStopped) {
+        try {
+          // Clear any webhook before polling (fast, drop_pending_updates: false avoids 504)
+          await bot.api.deleteWebhook({ drop_pending_updates: false }).catch(() => {});
+
+          this.isRunning = true;
+          this.lastPollingError = null;
+          console.log("[Bot] Starting long polling...");
+          await bot.start({
+            drop_pending_updates: false,
+            onStart: (info) => {
+              this.botInfo = info;
+              console.log(`Telegram Bot @${info.username} started and listening!`);
+            },
+          });
+          this.isRunning = false;
+          break;
+        } catch (err: any) {
+          this.isRunning = false;
+          this.lastPollingError = err?.description || err?.message || String(err);
+          console.error("[Bot] Polling loop error:", this.lastPollingError);
+
+          if (this.isStopped) break;
+
+          console.log("[Bot] Retrying polling in 3 seconds...");
+          await new Promise((r) => setTimeout(r, 3000));
+        }
+      }
+    };
+
+    void startPollingWithRetry();
+  }
+
+  async getStatus() {
+    let webhookInfo: any = null;
+    let me: any = null;
+    if (this.bot) {
+      try {
+        webhookInfo = await this.bot.api.getWebhookInfo();
+      } catch (e: any) {
+        webhookInfo = { error: e?.message };
+      }
+      try {
+        me = await this.bot.api.getMe();
+      } catch (e: any) {
+        me = { error: e?.message };
+      }
+    }
+    return {
+      isRunning: this.isRunning,
+      botInfo: this.botInfo || me,
+      lastPollingError: this.lastPollingError,
+      webhookInfo,
+      tokenConfigured: !!env.botToken && env.botToken !== "placeholder",
+    };
   }
 
   async stop() {
+    this.isStopped = true;
     if (this.bot) {
       await this.bot.stop();
     }
