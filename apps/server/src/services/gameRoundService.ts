@@ -240,7 +240,7 @@ export class GameRoundService {
    * Retrieves active round or creates a new WAITING round for the given room
    */
   async getOrCreateActiveRound(roomId: string) {
-    let round = await prisma.gameRound.findFirst({
+    const activeRounds = await prisma.gameRound.findMany({
       where: {
         roomId,
         status: { in: ["WAITING", "COUNTDOWN", "RUNNING"] },
@@ -255,6 +255,18 @@ export class GameRoundService {
       },
       orderBy: { createdAt: "desc" },
     });
+
+    let round: (typeof activeRounds)[number] | null = activeRounds[0] || null;
+
+    // Clean up any stale duplicate empty WAITING rounds for this room
+    if (activeRounds.length > 1) {
+      const extraEmpty = activeRounds.slice(1).filter((r) => r.status === "WAITING" && r.tickets.length === 0);
+      if (extraEmpty.length > 0) {
+        await prisma.gameRound.deleteMany({
+          where: { id: { in: extraEmpty.map((r) => r.id) } },
+        }).catch(() => {});
+      }
+    }
 
     if (round && round.status === "RUNNING") {
       const isExpired = round.startedAt && Date.now() - round.startedAt.getTime() > 600000;

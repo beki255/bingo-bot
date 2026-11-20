@@ -63,8 +63,11 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
       if (res.ok) {
         setGames((prev) => {
           const freshGames: AdminGameRow[] = res.games || [];
-          // Preserve any existing real-time countdown / currentBall info from socket
-          return freshGames.map((fg) => {
+          // Deduplicate incoming games by id
+          const dedupedFresh = freshGames.filter((item, index, self) =>
+            index === self.findIndex((t) => t.id === item.id)
+          );
+          return dedupedFresh.map((fg) => {
             const existing = prev.find((p) => p.id === fg.id);
             if (existing) {
               return {
@@ -115,8 +118,13 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
 
       setGames((prev) => {
         let matched = false;
+        // Only target the specific active round, never overwrite historical finished rounds
         const next = prev.map((g) => {
-          if (g.roomId === roomId || g.id === state.roundId) {
+          const isTarget =
+            g.id === state.roundId ||
+            (g.roomId === roomId && (g.status === "WAITING" || g.status === "COUNTDOWN" || g.status === "RUNNING"));
+
+          if (isTarget) {
             matched = true;
             const ticketsCount = state.ticketsCount ?? g.ticketsCount;
             const stake = state.stake ?? g.stakeAmount;
@@ -144,15 +152,20 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
           return g;
         });
 
+        // Deduplicate games by id
+        const deduped = next.filter((item, index, self) =>
+          index === self.findIndex((t) => t.id === item.id)
+        );
+
         // If newly created round is not yet in our table and we are on page 1, fetch silently
         if (!matched && page === 1 && state.status !== "FINISHED") {
           fetchGames(true);
         }
-        return next;
+        return deduped;
       });
 
       // Update active inspect modal if open for this room/round
-      if (detailRef.current && (detailRef.current.roomId === roomId || detailRef.current.id === state.roundId)) {
+      if (detailRef.current && (detailRef.current.id === state.roundId || (detailRef.current.roomId === roomId && detailRef.current.status !== "FINISHED"))) {
         setDetail((d) => {
           if (!d) return null;
           const ticketsCount = state.ticketsCount ?? d.tickets.length;
@@ -177,7 +190,7 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
       if (event === "countdown_tick") {
         setGames((prev) =>
           prev.map((g) =>
-            g.roomId === roomId
+            (g.id === payload?.roundId || (g.roomId === roomId && g.status !== "FINISHED" && g.status !== "CANCELLED_REFUNDED"))
               ? { ...g, status: "COUNTDOWN", countdown: payload?.countdown }
               : g
           )
@@ -185,7 +198,7 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
       } else if (event === "ball_called") {
         setGames((prev) =>
           prev.map((g) => {
-            if (g.roomId === roomId) {
+            if (g.id === payload?.roundId || (g.roomId === roomId && g.status !== "FINISHED" && g.status !== "CANCELLED_REFUNDED")) {
               const newCount = Array.isArray(payload?.calledNumbers)
                 ? payload.calledNumbers.length
                 : g.calledCount + 1;
@@ -201,7 +214,7 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
           })
         );
 
-        if (detailRef.current && detailRef.current.roomId === roomId) {
+        if (detailRef.current && (detailRef.current.id === payload?.roundId || (detailRef.current.roomId === roomId && detailRef.current.status !== "FINISHED"))) {
           setDetail((d) => {
             if (!d) return null;
             const updatedCalled = Array.isArray(payload?.calledNumbers)
@@ -220,7 +233,7 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
       } else if (event === "ticket_purchased") {
         setGames((prev) =>
           prev.map((g) => {
-            if (g.roomId === roomId || g.id === payload?.roundId) {
+            if (g.id === payload?.roundId || (g.roomId === roomId && g.status !== "FINISHED" && g.status !== "CANCELLED_REFUNDED")) {
               const ticketsCount = payload?.ticketsCount ?? g.ticketsCount;
               const totalPot = ticketsCount * g.stakeAmount;
               const houseCutAmount = Math.floor(totalPot * 0.2);
@@ -236,7 +249,7 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
           })
         );
 
-        if (detailRef.current && (detailRef.current.roomId === roomId || detailRef.current.id === payload?.roundId)) {
+        if (detailRef.current && (detailRef.current.id === payload?.roundId || (detailRef.current.roomId === roomId && detailRef.current.status !== "FINISHED"))) {
           setDetail((d) => {
             if (!d) return null;
             return {
@@ -248,18 +261,18 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
       } else if (event === "game_started") {
         setGames((prev) =>
           prev.map((g) =>
-            g.roomId === roomId
+            (g.id === payload?.roundId || (g.roomId === roomId && g.status !== "FINISHED" && g.status !== "CANCELLED_REFUNDED"))
               ? { ...g, status: "RUNNING", countdown: undefined }
               : g
           )
         );
-        if (detailRef.current && detailRef.current.roomId === roomId) {
+        if (detailRef.current && (detailRef.current.id === payload?.roundId || (detailRef.current.roomId === roomId && detailRef.current.status !== "FINISHED"))) {
           setDetail((d) => (d ? { ...d, status: "RUNNING" } : null));
         }
       } else if (event === "game_won") {
         setGames((prev) =>
           prev.map((g) => {
-            if (g.roomId === roomId || g.id === payload?.roundId) {
+            if (g.id === payload?.roundId || (g.roomId === roomId && g.status !== "FINISHED" && g.status !== "CANCELLED_REFUNDED")) {
               const freshWinners = Array.isArray(payload?.winners)
                 ? payload.winners.map((w: any) => ({
                     userId: "",
@@ -278,7 +291,7 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
           })
         );
 
-        if (detailRef.current && (detailRef.current.roomId === roomId || detailRef.current.id === payload?.roundId)) {
+        if (detailRef.current && (detailRef.current.id === payload?.roundId || (detailRef.current.roomId === roomId && detailRef.current.status !== "FINISHED"))) {
           setDetail((d) => {
             if (!d) return null;
             const updatedTickets = d.tickets.map((t) =>
@@ -291,7 +304,7 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
         }
       } else if (event === "game_ended") {
         setGames((prev) =>
-          prev.map((g) => (g.roomId === roomId ? { ...g, status: "FINISHED" } : g))
+          prev.map((g) => ((g.id === payload?.roundId || (g.roomId === roomId && g.status !== "FINISHED" && g.status !== "CANCELLED_REFUNDED")) ? { ...g, status: "FINISHED" } : g))
         );
         setTimeout(() => fetchGames(true), 3000);
       }
@@ -332,7 +345,7 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
     <div className="p-4 sm:p-8 flex flex-col gap-5 animate-fadeIn">
       {/* Top Header with Filters and Live Real-time Status Badge */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-1.5 bg-[#0f1422] p-1 rounded-xl border border-[#1a233b] w-fit">
+        <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-[#0f1422] p-1 rounded-xl border border-slate-200 dark:border-[#1a233b] w-fit shadow-sm">
           {(
             [
               ["ALL", "All Rounds"],
@@ -348,7 +361,7 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
                 setPage(1);
               }}
               className={`px-3.5 py-2 rounded-lg text-xs font-bold transition ${
-                statusFilter === val ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30" : "text-gray-400 hover:text-white"
+                statusFilter === val ? "bg-blue-600 text-white shadow" : "text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white"
               }`}
             >
               {label}
@@ -357,7 +370,7 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
         </div>
 
         {/* Live Realtime Connection Indicator */}
-        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#0f1422] border border-[#1a233b]">
+        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-[#0f1422] border border-slate-200 dark:border-[#1a233b] shadow-sm">
           <span className="relative flex h-2.5 w-2.5">
             {isSocketConnected && (
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
@@ -368,19 +381,19 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
               }`}
             />
           </span>
-          <span className="text-xs font-extrabold text-gray-300 flex items-center gap-1.5">
-            <Radio className="w-3.5 h-3.5 text-emerald-400" />
+          <span className="text-xs font-extrabold text-slate-700 dark:text-gray-300 flex items-center gap-1.5">
+            <Radio className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
             <span>{isSocketConnected ? "Live Realtime Monitor" : "Reconnecting..."}</span>
           </span>
         </div>
       </div>
 
       {/* Rounds Table */}
-      <div className="bg-[#0f1422] border border-[#1a233b] rounded-2xl shadow-xl overflow-hidden">
+      <div className="bg-white dark:bg-[#0f1422] border border-slate-200 dark:border-[#1a233b] rounded-2xl shadow-sm dark:shadow-xl overflow-hidden transition-colors">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-[#1a233b] text-[11px] uppercase tracking-wider text-gray-400 bg-[#0b101d]">
+              <tr className="border-b border-slate-200 dark:border-[#1a233b] text-[11px] uppercase tracking-wider text-slate-500 dark:text-gray-400 bg-slate-50 dark:bg-[#0b101d]">
                 <th className="py-3.5 px-4 font-bold">Room &amp; Time</th>
                 <th className="py-3.5 px-4 font-bold">Status (Live)</th>
                 <th className="py-3.5 px-4 font-bold">Players / Cartelas</th>
@@ -389,16 +402,16 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
                 <th className="py-3.5 px-4 font-bold text-right">Inspect</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#161e34] text-xs">
+            <tbody className="divide-y divide-slate-100 dark:divide-[#161e34] text-xs">
               {isLoading && games.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-10 text-center text-gray-500">
+                  <td colSpan={6} className="py-10 text-center text-slate-400 dark:text-gray-500">
                     Loading game rounds...
                   </td>
                 </tr>
               ) : games.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-10 text-center text-gray-500">
+                  <td colSpan={6} className="py-10 text-center text-slate-400 dark:text-gray-500">
                     No game rounds found.
                   </td>
                 </tr>
@@ -413,19 +426,19 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
                       key={g.id}
                       className={`transition ${
                         isLiveRunning
-                          ? "bg-cyan-950/20 hover:bg-cyan-900/30"
+                          ? "bg-cyan-500/10 dark:bg-cyan-950/20 hover:bg-cyan-500/15 dark:hover:bg-cyan-900/30"
                           : isCountdown
-                          ? "bg-amber-950/20 hover:bg-amber-900/30"
-                          : "hover:bg-[#131b2e]/60"
+                          ? "bg-amber-500/10 dark:bg-amber-950/20 hover:bg-amber-500/15 dark:hover:bg-amber-900/30"
+                          : "hover:bg-slate-50 dark:hover:bg-[#131b2e]/60"
                       }`}
                     >
                       <td className="py-3.5 px-4">
-                        <div className="font-bold text-white flex items-center gap-2">
+                        <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
                           <span>{g.roomNameAm}</span>
-                          <span className="text-gray-400 text-[11px]">({g.stakeAmount} ETB)</span>
+                          <span className="text-slate-500 dark:text-gray-400 text-[11px]">({g.stakeAmount} ETB)</span>
                         </div>
-                        <div className="text-[11px] text-gray-500 flex items-center gap-1 mt-0.5">
-                          <span className="font-mono text-gray-400">ID: TB{g.id.slice(-6).toUpperCase()}</span>
+                        <div className="text-[11px] text-slate-400 dark:text-gray-500 flex items-center gap-1 mt-0.5">
+                          <span className="font-mono text-slate-500 dark:text-gray-400 font-semibold">ID: TB{g.id.slice(-6).toUpperCase()}</span>
                           <span>•</span>
                           <span>{formatDateTime(g.createdAt)}</span>
                         </div>
@@ -434,31 +447,31 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
                       {/* Live Status Badge */}
                       <td className="py-3.5 px-4">
                         {isCountdown ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse shadow-sm shadow-amber-500/20">
-                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-600 dark:text-amber-300 border border-amber-500/40 animate-pulse shadow-sm shadow-amber-500/20">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 dark:bg-amber-400 animate-ping" />
                             <Clock className="w-3 h-3" />
                             <span>COUNTDOWN {g.countdown !== undefined ? `(${g.countdown}s)` : ""}</span>
                           </span>
                         ) : isLiveRunning ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/20">
-                            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-                            <Sparkles className="w-3 h-3 text-cyan-300" />
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/20">
+                            <span className="w-2 h-2 rounded-full bg-cyan-500 dark:bg-cyan-400 animate-pulse" />
+                            <Sparkles className="w-3 h-3 text-cyan-600 dark:text-cyan-300" />
                             <span>
                               LIVE {g.currentBall ? `• ${g.currentBall.letter}-${g.currentBall.num}` : ""}
                             </span>
                           </span>
                         ) : isWaiting ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">
                             <span>⏳ WAITING ({g.ticketsCount} cards)</span>
                           </span>
                         ) : (
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
                               g.status === "FINISHED"
-                                ? "bg-emerald-500/15 text-emerald-400"
+                                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
                                 : g.status === "CANCELLED_REFUNDED"
-                                ? "bg-rose-500/15 text-rose-400"
-                                : "bg-gray-500/15 text-gray-400"
+                                ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30"
+                                : "bg-slate-100 dark:bg-gray-500/15 text-slate-600 dark:text-gray-400 border-slate-300 dark:border-transparent"
                             }`}
                           >
                             {g.status}
@@ -468,17 +481,17 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
 
                       {/* Players & Balls Count */}
                       <td className="py-3.5 px-4">
-                        <div className="text-white font-semibold flex items-center gap-1.5">
+                        <div className="text-slate-900 dark:text-white font-semibold flex items-center gap-1.5">
                           <span>{g.playersCount} players</span>
-                          <span className="text-gray-500">•</span>
-                          <span className="text-cyan-300 font-bold">{g.ticketsCount} cartelas</span>
+                          <span className="text-slate-400 dark:text-gray-500">•</span>
+                          <span className="text-blue-600 dark:text-cyan-300 font-bold">{g.ticketsCount} cartelas</span>
                         </div>
-                        <div className="text-[11px] text-gray-400 flex items-center gap-1 mt-0.5">
-                          <span className={isLiveRunning ? "text-amber-400 font-bold" : ""}>
+                        <div className="text-[11px] text-slate-500 dark:text-gray-400 flex items-center gap-1 mt-0.5">
+                          <span className={isLiveRunning ? "text-amber-600 dark:text-amber-400 font-bold" : ""}>
                             {g.calledCount} / 75 balls drawn
                           </span>
                           {g.pendingSelectionsCount && g.pendingSelectionsCount > 0 ? (
-                            <span className="text-[10px] font-bold text-amber-300 bg-amber-500/20 px-1.5 rounded">
+                            <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/20 px-1.5 rounded">
                               +{g.pendingSelectionsCount} selecting
                             </span>
                           ) : null}
@@ -487,10 +500,10 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
 
                       {/* Pot & Commission */}
                       <td className="py-3.5 px-4">
-                        <div className="font-extrabold text-white text-xs">
-                          Pot: <span className="text-emerald-400">{formatMoney(g.totalPot)} ETB</span>
+                        <div className="font-extrabold text-slate-900 dark:text-white text-xs">
+                          Pot: <span className="text-emerald-600 dark:text-emerald-400">{formatMoney(g.totalPot)} ETB</span>
                         </div>
-                        <div className="text-[11px] text-purple-400 font-bold mt-0.5">
+                        <div className="text-[11px] text-purple-600 dark:text-purple-400 font-bold mt-0.5">
                           House: +{formatMoney(g.houseCutAmount)} ETB
                         </div>
                       </td>
@@ -498,14 +511,14 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
                       {/* Winners */}
                       <td className="py-3.5 px-4">
                         {g.winners.length === 0 ? (
-                          <span className="text-gray-500">—</span>
+                          <span className="text-slate-400 dark:text-gray-500">—</span>
                         ) : (
                           <div className="flex flex-col gap-0.5">
                             {g.winners.map((w, i) => (
-                              <span key={i} className="text-emerald-400 font-bold flex items-center gap-1 text-[11px]">
+                              <span key={i} className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 text-[11px]">
                                 <Trophy className="w-3 h-3 shrink-0" />
                                 <span>{w.userName} (#{w.cartelaNumber})</span>
-                                <span className="text-emerald-300 font-black">+{formatMoney(w.prizeWon)}</span>
+                                <span className="text-emerald-700 dark:text-emerald-300 font-black">+{formatMoney(w.prizeWon)}</span>
                               </span>
                             ))}
                           </div>
@@ -516,7 +529,7 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
                       <td className="py-3.5 px-4 text-right">
                         <button
                           onClick={() => inspectRound(g.id)}
-                          className="p-2 rounded-lg bg-[#162038] hover:bg-blue-600 text-gray-300 hover:text-white transition shadow-sm"
+                          className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#162038] dark:hover:bg-blue-600 border border-slate-200 dark:border-transparent text-slate-600 dark:text-gray-300 hover:text-slate-900 dark:hover:text-white transition shadow-sm"
                           title="Inspect Round Live"
                         >
                           <Eye className="w-4 h-4" />
@@ -531,22 +544,22 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
         </div>
 
         {/* Pagination Bar */}
-        <div className="px-4 py-3 border-t border-[#1a233b] bg-[#0b101d] flex items-center justify-between text-xs text-gray-400">
+        <div className="px-4 py-3 border-t border-slate-200 dark:border-[#1a233b] bg-slate-50 dark:bg-[#0b101d] flex items-center justify-between text-xs text-slate-500 dark:text-gray-400">
           <span>
-            Total Rounds: <b>{total}</b> (Page {page} of {totalPages})
+            Total Rounds: <b className="text-slate-900 dark:text-white">{total}</b> (Page {page} of {totalPages})
           </span>
           <div className="flex items-center gap-2">
             <button
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="p-1.5 rounded-lg bg-[#162038] text-white disabled:opacity-30 transition"
+              className="p-1.5 rounded-lg bg-white dark:bg-[#162038] border border-slate-200 dark:border-transparent text-slate-600 dark:text-white disabled:opacity-30 transition shadow-sm"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
             <button
               disabled={page >= totalPages}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="p-1.5 rounded-lg bg-[#162038] text-white disabled:opacity-30 transition"
+              className="p-1.5 rounded-lg bg-white dark:bg-[#162038] border border-slate-200 dark:border-transparent text-slate-600 dark:text-white disabled:opacity-30 transition shadow-sm"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
