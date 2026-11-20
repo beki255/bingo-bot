@@ -24,6 +24,7 @@ interface LiveGameProps {
   stake: number;
   houseCutPercent?: number;
   callIntervalMs?: number;
+  winnerDelaySeconds?: number;
   freeCenter?: boolean;
   cartelaNumbers: number[];
   registeredCards: number[];
@@ -41,6 +42,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
   stake,
   houseCutPercent = 20,
   callIntervalMs = 3500,
+  winnerDelaySeconds = 6,
   freeCenter = true,
   cartelaNumbers,
   registeredCards,
@@ -83,11 +85,38 @@ export const LiveGame: React.FC<LiveGameProps> = ({
 
   // Real winner celebration state
   const [winnerData, setWinnerData] = useState<WinnerData | null>(null);
-  const [nextGameCountdown, setNextGameCountdown] = useState(6);
+  const [nextGameCountdown, setNextGameCountdown] = useState(winnerDelaySeconds || 6);
   const hasAwardedPrizeRef = useRef(false);
   const hasGameEndedRef = useRef(false);
   const hasAnnouncedStartRef = useRef(false);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Countdown timer for next game while winner card is displayed
+  useEffect(() => {
+    if (!winnerData) return;
+    const timer = setInterval(() => {
+      setNextGameCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          if (onNextRound) onNextRound();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [winnerData, onNextRound]);
+
+  // Auto-recover if all 75 balls are called without a winner
+  useEffect(() => {
+    if (calledNumbers.length >= 75 && !winnerData) {
+      hasGameEndedRef.current = true;
+      const t = setTimeout(() => {
+        if (onNextRound) onNextRound();
+      }, 3000);
+      return () => clearTimeout(t);
+    }
+  }, [calledNumbers.length, winnerData, onNextRound]);
 
   // Helper to play MP3 recording from /sounds/ with synthesizer fallback
   const playAudioFile = (filename: string, fallback?: () => void) => {
@@ -254,7 +283,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       if (typeof state?.ticketsCount === "number") {
         setServerPlayersCount(state.ticketsCount);
       }
-      if (state?.status === "WAITING" && hasGameEndedRef.current) {
+      if (state?.status === "WAITING" && !winnerData) {
         if (onNextRound) onNextRound();
       }
     });
@@ -278,6 +307,9 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       const winningCard = data?.winningCartelaNo;
       const isUserWinner = cartelaNumbers.includes(winningCard);
 
+      const delay = Number(data?.delaySeconds ?? winnerDelaySeconds ?? 6);
+      setNextGameCountdown(delay);
+
       if (isUserWinner && onWinPrize && !hasAwardedPrizeRef.current) {
         hasAwardedPrizeRef.current = true;
         onWinPrize(data?.derash ?? derash);
@@ -297,8 +329,8 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     s.on("game_ended", () => {
       hasGameEndedRef.current = true;
       setTimeout(() => {
-        if (onNextRound) onNextRound();
-      }, 3000);
+        if (!winnerData && onNextRound) onNextRound();
+      }, 2500);
     });
 
     setSocket(s);
@@ -314,6 +346,9 @@ export const LiveGame: React.FC<LiveGameProps> = ({
           if (st.currentBall) setCurrentBall(st.currentBall);
           if (typeof st.derash === "number") setServerDerash(st.derash);
           if (typeof st.ticketsCount === "number") setServerPlayersCount(st.ticketsCount);
+          if (st.status === "WAITING" && !winnerData) {
+            if (onNextRound) onNextRound();
+          }
         }
       })
       .catch(() => {});
@@ -328,7 +363,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
           if (st.gameId || st.gameCode) setDisplayGameId(st.gameId || st.gameCode);
           if (Array.isArray(st.calledNumbers)) setCalledNumbers(st.calledNumbers);
           if (st.currentBall) setCurrentBall(st.currentBall);
-          if (st.status === "WAITING" && hasGameEndedRef.current) {
+          if (st.status === "WAITING" && !winnerData) {
             if (onNextRound) onNextRound();
           }
         }
@@ -686,11 +721,13 @@ export const LiveGame: React.FC<LiveGameProps> = ({
           {/* Bottom of Right Panel: Either "Watching Only" Card OR Player's 5x5 Cartela */}
           {isWatchingOnly ? (
             <div className="bg-[#12142d] rounded-xl border border-white/10 p-4 shadow-lg flex-1 flex flex-col items-center justify-center text-center animate-fadeIn">
-              <h3 className="text-xl font-black text-white mb-5 tracking-wide">
+              <h3 className="text-xl font-black text-white mb-3 tracking-wide">
                 Watching Only
               </h3>
               <p className="text-sm font-bold text-gray-200 leading-relaxed max-w-[210px]">
-                የዚህ ዙር ጨዋታ ተጀምሯል፤ አዲስ ዙር እስኪጀምር እዚሁ ይጠብቁ።
+                {calledNumbers.length >= 75
+                  ? "🔔 ሁሉም 75 ቁጥሮች ተጠርተዋል፤ አዲስ ዙር አሁን ይጀምራል..."
+                  : "የዚህ ዙር ጨዋታ ተጀምሯል፤ አዲስ ዙር እስኪጀምር እዚሁ ይጠብቁ።"}
               </p>
             </div>
           ) : (
@@ -767,11 +804,24 @@ export const LiveGame: React.FC<LiveGameProps> = ({
         </button>
 
         <button
-          onClick={() => {}}
-          disabled={isWatchingOnly}
-          className={`col-span-1 py-3 rounded-xl text-white font-extrabold text-xs flex items-center justify-center gap-1 active:scale-95 shadow-md transition ${
-            isWatchingOnly ? "bg-orange-800/40 text-gray-400 cursor-not-allowed" : "bg-[#ff6d00] hover:bg-[#ff8f00]"
-          }`}
+          onClick={async () => {
+            try {
+              const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/state`);
+              const data = await res.json();
+              if (data.ok && data.state) {
+                const st = data.state;
+                if (st.gameId || st.gameCode) setDisplayGameId(st.gameId || st.gameCode);
+                if (Array.isArray(st.calledNumbers)) setCalledNumbers(st.calledNumbers);
+                if (st.currentBall) setCurrentBall(st.currentBall);
+                if (typeof st.derash === "number") setServerDerash(st.derash);
+                if (typeof st.ticketsCount === "number") setServerPlayersCount(st.ticketsCount);
+                if (st.status === "WAITING" && !winnerData) {
+                  if (onNextRound) onNextRound();
+                }
+              }
+            } catch {}
+          }}
+          className="col-span-1 py-3 rounded-xl text-white font-extrabold text-xs flex items-center justify-center gap-1 active:scale-95 shadow-md transition bg-[#ff6d00] hover:bg-[#ff8f00]"
         >
           <RotateCw className="w-3.5 h-3.5" />
           <span>Refresh</span>
@@ -872,9 +922,9 @@ export const LiveGame: React.FC<LiveGameProps> = ({
             </div>
           </div>
 
-          <div className="mt-4 px-4 py-2 rounded-full bg-[#1e223d] border border-white/10 text-xs font-bold text-gray-200 flex items-center justify-center gap-2 shadow-lg mb-4">
-            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
-            <span>Auto-starting next game in {nextGameCountdown}s</span>
+          <div className="mt-4 px-5 py-2.5 rounded-2xl bg-amber-500/15 border border-amber-400/40 text-xs font-black text-amber-300 flex items-center justify-center gap-2.5 shadow-xl mb-4 animate-pulse">
+            <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
+            <span>⏳ አዲስ ጨዋታ በ {nextGameCountdown} ሰከንድ ውስጥ ይጀምራል...</span>
           </div>
 
           <button

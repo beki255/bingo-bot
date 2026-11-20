@@ -1274,6 +1274,7 @@ export function createAdminRouter() {
     maxCartelasPerUser: z.number().int().min(1).max(10).nullable().optional(),
     cartelaPoolSize: z.number().int().min(10).max(600).default(600),
     countdownSeconds: z.number().int().min(5).max(300).default(30),
+    nextGameDelaySeconds: z.number().int().min(3).max(60).default(6),
     callIntervalMs: z.number().int().min(1000).max(15000).default(3500),
     winningPattern: z
       .enum(["ONE_LINE", "TWO_LINES", "FOUR_CORNERS", "X_SHAPE", "FULL_HOUSE"])
@@ -1304,6 +1305,7 @@ export function createAdminRouter() {
           maxCartelasPerUser: r.maxCartelasPerUser,
           cartelaPoolSize: r.cartelaPoolSize,
           countdownSeconds: r.countdownSeconds,
+          nextGameDelaySeconds: r.nextGameDelaySeconds ?? 6,
           waitTimeoutSeconds: r.waitTimeoutSeconds,
           callIntervalMs: r.callIntervalMs,
           winningPattern: r.winningPattern,
@@ -1336,6 +1338,7 @@ export function createAdminRouter() {
           maxCartelasPerUser: parsed.data.maxCartelasPerUser ?? null,
           cartelaPoolSize: parsed.data.cartelaPoolSize,
           countdownSeconds: parsed.data.countdownSeconds,
+          nextGameDelaySeconds: parsed.data.nextGameDelaySeconds,
           callIntervalMs: parsed.data.callIntervalMs,
           winningPattern: parsed.data.winningPattern,
           freeCenter: parsed.data.freeCenter,

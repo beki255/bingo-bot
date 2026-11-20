@@ -260,8 +260,9 @@ model Room {
   minPlayers         Int            @default(2)
   maxCartelasPerUser Int?
   cartelaPoolSize    Int            @default(100)
-  countdownSeconds   Int            @default(30)
-  waitTimeoutSeconds Int            @default(300)
+  countdownSeconds     Int            @default(30)
+  nextGameDelaySeconds Int            @default(6)
+  waitTimeoutSeconds   Int            @default(300)
   callIntervalMs     Int            @default(3500)
   winningPattern     WinningPattern @default(ONE_LINE)
   freeCenter         Boolean        @default(true)

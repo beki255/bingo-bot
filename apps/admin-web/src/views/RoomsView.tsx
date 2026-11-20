@@ -23,6 +23,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
   const [maxCartelasPerUser, setMaxCartelasPerUser] = useState(2);
   const [cartelaPoolSize, setCartelaPoolSize] = useState(600);
   const [countdownSeconds, setCountdownSeconds] = useState(30);
+  const [nextGameDelaySeconds, setNextGameDelaySeconds] = useState(6);
   const [callIntervalMs, setCallIntervalMs] = useState(3500);
   const [winningPattern, setWinningPattern] = useState<AdminRoomRow["winningPattern"]>("ONE_LINE");
   const [freeCenter, setFreeCenter] = useState(true);
@@ -63,6 +64,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
     setMaxCartelasPerUser(2);
     setCartelaPoolSize(600);
     setCountdownSeconds(30);
+    setNextGameDelaySeconds(6);
     setCallIntervalMs(3500);
     setWinningPattern("ONE_LINE");
     setFreeCenter(true);
@@ -81,6 +83,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
     setMaxCartelasPerUser(r.maxCartelasPerUser ?? 2);
     setCartelaPoolSize(r.cartelaPoolSize);
     setCountdownSeconds(r.countdownSeconds);
+    setNextGameDelaySeconds(r.nextGameDelaySeconds ?? 6);
     setCallIntervalMs(r.callIntervalMs);
     setWinningPattern(r.winningPattern);
     setFreeCenter(r.freeCenter);
@@ -102,6 +105,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
         maxCartelasPerUser: Number(maxCartelasPerUser),
         cartelaPoolSize: Number(cartelaPoolSize),
         countdownSeconds: Number(countdownSeconds),
+        nextGameDelaySeconds: Number(nextGameDelaySeconds),
         callIntervalMs: Number(callIntervalMs),
         winningPattern,
         freeCenter,
@@ -216,8 +220,8 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
                   <b className="text-purple-400">{r.houseCutPercent}%</b>
                 </div>
                 <div>
-                  <span className="text-[10px] text-gray-500 block">Countdown</span>
-                  <b className="text-white">{r.countdownSeconds}s</b>
+                  <span className="text-[10px] text-gray-500 block">Countdown / Winner Delay</span>
+                  <b className="text-white">{r.countdownSeconds}s • <span className="text-amber-400">{r.nextGameDelaySeconds ?? 6}s delay</span></b>
                 </div>
                 <div>
                   <span className="text-[10px] text-gray-500 block">Ball Speed</span>
@@ -327,7 +331,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
                 <label className="text-xs font-bold text-gray-300 block mb-1">Countdown (s)</label>
                 <input
@@ -337,6 +341,18 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
                   required
                   value={countdownSeconds}
                   onChange={(e) => setCountdownSeconds(Number(e.target.value))}
+                  className="w-full bg-[#0a0e18] border border-[#1e2742] rounded-xl px-3 py-2 text-xs text-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-300 block mb-1">Winner Delay (s)</label>
+                <input
+                  type="number"
+                  min="3"
+                  max="60"
+                  required
+                  value={nextGameDelaySeconds}
+                  onChange={(e) => setNextGameDelaySeconds(Number(e.target.value))}
                   className="w-full bg-[#0a0e18] border border-[#1e2742] rounded-xl px-3 py-2 text-xs text-white font-mono"
                 />
               </div>

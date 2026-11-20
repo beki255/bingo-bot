@@ -18,6 +18,7 @@ interface Room {
   minPlayers?: number;
   maxCartelasPerUser?: number;
   countdownSeconds?: number;
+  nextGameDelaySeconds?: number;
   callIntervalMs?: number;
   cartelaPoolSize?: number;
   freeCenter?: boolean;
@@ -212,6 +213,7 @@ export default function App() {
           stake={selectedRoom.stakeAmount}
           houseCutPercent={selectedRoom.houseCutPercent ?? 20}
           callIntervalMs={selectedRoom.callIntervalMs ?? 3500}
+          winnerDelaySeconds={selectedRoom.nextGameDelaySeconds ?? 6}
           freeCenter={selectedRoom.freeCenter ?? true}
           cartelaNumbers={playingCards}
           registeredCards={registeredRoundCards}

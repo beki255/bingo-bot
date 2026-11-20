@@ -64,6 +64,7 @@ export interface WinnerResult {
   winningCartelaNo: number;
   winningPatternKeys: string[];
   derash?: number;
+  delaySeconds?: number;
 }
 
 export class GameRoundService {
@@ -226,8 +227,9 @@ export class GameRoundService {
     if (round && round.status === "RUNNING") {
       const isExpired = round.startedAt && Date.now() - round.startedAt.getTime() > 600000;
       const isAllBallsCalled = round.calledNumbers.length >= 75;
+      const hasNoTickets = round.tickets.length === 0;
 
-      if (isAllBallsCalled || isExpired) {
+      if (isAllBallsCalled || isExpired || hasNoTickets) {
         const timer = this.callTimers.get(roomId);
         if (timer) clearInterval(timer);
         this.callTimers.delete(roomId);
@@ -339,6 +341,7 @@ export class GameRoundService {
       currentBall,
       recentCalls,
       countdownSeconds: round.room.countdownSeconds ?? 30,
+      nextGameDelaySeconds: round.room.nextGameDelaySeconds ?? 6,
       callIntervalMs: round.room.callIntervalMs ?? 3500,
       cartelaPoolSize: round.room.cartelaPoolSize ?? 600,
       freeCenter: round.room.freeCenter ?? true,
@@ -598,9 +601,20 @@ export class GameRoundService {
         },
       });
 
-      if (!round || round.status !== "RUNNING") {
+      if (!round || round.status !== "RUNNING" || round.tickets.length === 0) {
         clearInterval(callTimer);
         this.callTimers.delete(roomId);
+        if (round && round.tickets.length === 0) {
+          await prisma.gameRound.update({
+            where: { id: roundId },
+            data: { status: "FINISHED", endedAt: new Date() },
+          });
+          setTimeout(async () => {
+            await this.getOrCreateActiveRound(roomId);
+            const nextState = await this.getRoomState(roomId);
+            this.broadcastRoomState(roomId, nextState);
+          }, 1000);
+        }
         return;
       }
 
@@ -721,6 +735,8 @@ export class GameRoundService {
       });
     });
 
+    const delaySec = round.room?.nextGameDelaySeconds ?? 6;
+
     const winnersPayload: WinnerResult = {
       winners: winningTickets.map((w) => ({
         name: w.ticket.user.username ? `@${w.ticket.user.username}` : w.ticket.user.firstName || "Player",
@@ -730,16 +746,17 @@ export class GameRoundService {
       winningCartelaNo: winningTickets[0].ticket.cartelaNumber,
       winningPatternKeys: Array.from(winningTickets[0].keys),
       derash: splitPrize,
+      delaySeconds: delaySec,
     };
 
     this.emitEvent(roomId, "game_won", winnersPayload);
 
-    // After 6 seconds, initialize the next WAITING round
+    // After delaySec seconds, initialize the next WAITING round
     setTimeout(async () => {
       await this.getOrCreateActiveRound(roomId);
       const nextState = await this.getRoomState(roomId);
       this.broadcastRoomState(roomId, nextState);
-    }, 6000);
+    }, delaySec * 1000);
   }
 }
 

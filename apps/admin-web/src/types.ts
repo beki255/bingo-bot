@@ -112,6 +112,7 @@ export interface AdminRoomRow {
   maxCartelasPerUser: number | null;
   cartelaPoolSize: number;
   countdownSeconds: number;
+  nextGameDelaySeconds: number;
   waitTimeoutSeconds: number;
   callIntervalMs: number;
   winningPattern: "ONE_LINE" | "TWO_LINES" | "FOUR_CORNERS" | "X_SHAPE" | "FULL_HOUSE";
