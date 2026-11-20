@@ -7,6 +7,7 @@ import {
   deductBetTx,
   creditWinTx,
 } from "./walletService.js";
+import { realtimeService } from "./realtimeService.js";
 import { generateDeterministicCartela, type BingoLetter } from "@bingo/shared";
 
 export function getLetterForNumber(n: number): BingoLetter {
@@ -145,6 +146,12 @@ export class GameRoundService {
       let currentRoom: string | null = null;
       let currentClient: string = socket.id;
 
+      socket.on("join_user", (data: { telegramId: string | number }) => {
+        if (data?.telegramId) {
+          socket.join(`user_${String(data.telegramId)}`);
+        }
+      });
+
       socket.on("join_admin_monitor", async () => {
         socket.join("admin_monitor");
         try {
@@ -160,6 +167,10 @@ export class GameRoundService {
         const roomId = typeof data === "string" ? data : data?.roomId;
         if (!roomId) return;
         const clientId = typeof data === "object" && data?.clientId ? data.clientId : socket.id;
+        const telegramId = typeof data === "object" && data?.telegramId ? data.telegramId : clientId;
+        if (telegramId) {
+          socket.join(`user_${String(telegramId)}`);
+        }
         currentRoom = roomId;
         currentClient = clientId;
         socket.join(`room_${roomId}`);
@@ -295,7 +306,7 @@ export class GameRoundService {
         include: {
           tickets: {
             include: {
-              user: { select: { id: true, firstName: true, username: true } },
+              user: { select: { id: true, firstName: true, username: true, telegramId: true } },
             },
           },
           room: true,
@@ -415,8 +426,10 @@ export class GameRoundService {
     }
 
     // 2. Transact: deduct balance & create tickets
+    let balanceAfterDeduct = 0;
     await prisma.$transaction(async (tx) => {
-      await deductBetTx(tx, user.id, totalCost, round.id);
+      const balAfter = await deductBetTx(tx, user.id, totalCost, round.id);
+      balanceAfterDeduct = Number(balAfter);
 
       for (const cardNum of cartelaNumbers) {
         await tx.gameTicket.create({
@@ -445,6 +458,11 @@ export class GameRoundService {
           prizePool: centsToDecimal(toCents(newPrizePool)),
         },
       });
+    });
+
+    realtimeService.notifyWalletUpdate(user.telegramId, {
+      balance: balanceAfterDeduct,
+      reason: "BET_DEDUCTED",
     });
 
     this.removeClient(roomId, String(telegramId));
@@ -630,7 +648,7 @@ export class GameRoundService {
           room: true,
           tickets: {
             include: {
-              user: { select: { id: true, firstName: true, username: true } },
+              user: { select: { id: true, firstName: true, username: true, telegramId: true } },
             },
           },
         },
@@ -757,11 +775,18 @@ export class GameRoundService {
     // Credit real winner(s)
     await prisma.$transaction(async (tx) => {
       for (const winItem of winningTickets) {
-        await creditWinTx(tx, winItem.ticket.userId, splitPrize, roundId);
+        const balAfter = await creditWinTx(tx, winItem.ticket.userId, splitPrize, roundId);
         await tx.gameTicket.update({
           where: { id: winItem.ticket.id },
           data: { status: "WINNER", prizeWon: centsToDecimal(toCents(splitPrize)) },
         });
+        if (winItem.ticket.user?.telegramId) {
+          realtimeService.notifyWalletUpdate(winItem.ticket.user.telegramId, {
+            balance: Number(balAfter),
+            prize: splitPrize,
+            reason: "WIN_PRIZE",
+          });
+        }
       }
 
       await tx.gameRound.update({
@@ -769,6 +794,8 @@ export class GameRoundService {
         data: { status: "FINISHED", endedAt: new Date() },
       });
     });
+
+    realtimeService.notifyAdminEvent({ type: "game_finished", payload: { roundId, roomId } });
 
     const delaySec = round.room?.nextGameDelaySeconds ?? 6;
 

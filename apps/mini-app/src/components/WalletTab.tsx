@@ -72,7 +72,7 @@ export const WalletTab: React.FC<WalletTabProps> = ({
 
   useEffect(() => {
     fetchTransactions();
-  }, [subTab]);
+  }, [subTab, userBalance]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);

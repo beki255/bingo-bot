@@ -6,6 +6,7 @@ import {
   processReferralBonusTx,
   toCents,
 } from "./walletService.js";
+import { realtimeService } from "./realtimeService.js";
 
 function makeReferralCode(): string {
   return "BG" + crypto.randomBytes(3).toString("hex").toUpperCase();
@@ -207,7 +208,7 @@ export async function createDepositRequest(
     throw new Error("DUPLICATE_TX_REF");
   }
 
-  return prisma.depositRequest.create({
+  const dep = await prisma.depositRequest.create({
     data: {
       userId,
       paymentAccountId: account.id,
@@ -221,5 +222,12 @@ export async function createDepositRequest(
       paymentAccount: true,
     },
   });
+
+  realtimeService.notifyAdminEvent({
+    type: "deposit_created",
+    payload: { depositId: dep.id, userId: dep.userId, amount: dep.amount },
+  });
+
+  return dep;
 }
 

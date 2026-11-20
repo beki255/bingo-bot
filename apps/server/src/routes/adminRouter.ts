@@ -15,6 +15,7 @@ import {
   rejectWithdrawRequest,
 } from "../services/walletService.js";
 import { botService } from "../bot/botService.js";
+import { realtimeService } from "../services/realtimeService.js";
 
 interface AdminJwtPayload {
   userId: string;
@@ -852,6 +853,8 @@ export function createAdminRouter() {
         after: { isBanned: updated.isBanned, reason: parsed.data.reason || null },
       });
 
+      realtimeService.notifyAdminEvent({ type: "user_updated", payload: { userId: target.id } });
+
       const lang: Language = target.language || "AM";
       const notice = parsed.data.isBanned
         ? lang === "AM"
@@ -916,6 +919,8 @@ export function createAdminRouter() {
           passwordSet: Boolean(parsed.data.password),
         },
       });
+
+      realtimeService.notifyAdminEvent({ type: "user_updated", payload: { userId: target.id } });
 
       res.json({ ok: true, role: updated.role, username: updated.username });
     } catch (err) {
@@ -1354,6 +1359,7 @@ export function createAdminRouter() {
         targetId: created.id,
         after: parsed.data,
       });
+      realtimeService.notifyAdminEvent({ type: "room_updated", payload: { roomId: created.id } });
       res.json({ ok: true, room: created });
     } catch (err) {
       console.error("Create room error:", err);
@@ -1392,6 +1398,7 @@ export function createAdminRouter() {
         },
         after: parsed.data,
       });
+      realtimeService.notifyAdminEvent({ type: "room_updated", payload: { roomId: updated.id } });
       res.json({ ok: true, room: updated });
     } catch (err) {
       console.error("Update room error:", err);
@@ -1425,6 +1432,7 @@ export function createAdminRouter() {
         targetId: room.id,
         before: { nameAm: room.nameAm, stakeAmount: Number(room.stakeAmount) },
       });
+      realtimeService.notifyAdminEvent({ type: "room_updated", payload: { roomId: room.id } });
       res.json({ ok: true });
     } catch (err) {
       console.error("Delete room error:", err);
@@ -1687,6 +1695,7 @@ export function createAdminRouter() {
         targetId: created.id,
         after: parsed.data,
       });
+      realtimeService.notifyAdminEvent({ type: "payment_account_updated", payload: { accountId: created.id } });
       res.json({ ok: true, account: created });
     } catch (err) {
       console.error("Create payment account error:", err);
@@ -1720,6 +1729,7 @@ export function createAdminRouter() {
         before: { provider: before.provider, accountNumber: before.accountNumber, isActive: before.isActive },
         after: parsed.data,
       });
+      realtimeService.notifyAdminEvent({ type: "payment_account_updated", payload: { accountId: updated.id } });
       res.json({ ok: true, account: updated });
     } catch (err) {
       console.error("Update payment account error:", err);
@@ -1751,6 +1761,7 @@ export function createAdminRouter() {
           targetType: "PaymentAccount",
           targetId: account.id,
         });
+        realtimeService.notifyAdminEvent({ type: "payment_account_updated", payload: { accountId: account.id } });
         res.json({ ok: true, softDisabled: true });
         return;
       }
@@ -1762,6 +1773,7 @@ export function createAdminRouter() {
         targetType: "PaymentAccount",
         targetId: account.id,
       });
+      realtimeService.notifyAdminEvent({ type: "payment_account_updated", payload: { accountId: account.id } });
       res.json({ ok: true });
     } catch (err) {
       console.error("Delete payment account error:", err);

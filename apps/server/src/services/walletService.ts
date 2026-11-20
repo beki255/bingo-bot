@@ -2,6 +2,7 @@ import { Prisma, type ReferralTriggerType, type UserRole } from "@prisma/client"
 import type { WalletSummary } from "@bingo/shared";
 import { prisma } from "../db/prisma.js";
 import { recordAuditLog } from "./auditService.js";
+import { realtimeService } from "./realtimeService.js";
 
 export function toCents(value: Prisma.Decimal | number | string): number {
   return Math.round(Number(value) * 100);
@@ -189,7 +190,7 @@ export async function approveDepositRequest(
   actorRole: UserRole,
   note?: string
 ) {
-  return prisma.$transaction(async (tx) => {
+  const res = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "DepositRequest" WHERE id = ${depositId} FOR UPDATE`;
     const dep = await tx.depositRequest.findUnique({
       where: { id: depositId },
@@ -258,8 +259,20 @@ export async function approveDepositRequest(
       user: dep.user,
       paymentAccount: dep.paymentAccount,
       referralBonus: firstDepBonus ?? everyDepBonus,
+      newBalance: centsToNumber(newBalanceCents),
     };
   });
+
+  realtimeService.notifyWalletUpdate(res.user.telegramId, {
+    balance: res.newBalance,
+    reason: "DEPOSIT_APPROVED",
+  });
+  realtimeService.notifyAdminEvent({
+    type: "deposit_approved",
+    payload: { depositId, userId: res.user.id },
+  });
+
+  return res;
 }
 
 export async function rejectDepositRequest(
@@ -268,7 +281,7 @@ export async function rejectDepositRequest(
   actorRole: UserRole,
   note?: string
 ) {
-  return prisma.$transaction(async (tx) => {
+  const res = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "DepositRequest" WHERE id = ${depositId} FOR UPDATE`;
     const dep = await tx.depositRequest.findUnique({
       where: { id: depositId },
@@ -299,6 +312,13 @@ export async function rejectDepositRequest(
 
     return { deposit: updated, user: dep.user };
   });
+
+  realtimeService.notifyAdminEvent({
+    type: "deposit_rejected",
+    payload: { depositId, userId: res.user.id },
+  });
+
+  return res;
 }
 
 export async function createWithdrawRequest(
@@ -310,7 +330,7 @@ export async function createWithdrawRequest(
     amount: number;
   }
 ) {
-  return prisma.$transaction(async (tx) => {
+  const res = await prisma.$transaction(async (tx) => {
     const user = await tx.user.findUnique({ where: { id: userId } });
     if (!user) throw new Error("USER_NOT_FOUND");
     if (user.isBanned) throw new Error("USER_BANNED");
@@ -364,8 +384,19 @@ export async function createWithdrawRequest(
       },
     });
 
-    return { withdraw, user };
+    return { withdraw, user, newBalance: centsToNumber(newBalanceCents) };
   });
+
+  realtimeService.notifyWalletUpdate(res.user.telegramId, {
+    balance: res.newBalance,
+    reason: "WITHDRAW_LOCKED",
+  });
+  realtimeService.notifyAdminEvent({
+    type: "withdrawal_created",
+    payload: { withdrawalId: res.withdraw.id, userId },
+  });
+
+  return res;
 }
 
 export async function markWithdrawPaid(
@@ -375,7 +406,7 @@ export async function markWithdrawPaid(
   payoutRef?: string,
   note?: string
 ) {
-  return prisma.$transaction(async (tx) => {
+  const res = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "WithdrawRequest" WHERE id = ${withdrawId} FOR UPDATE`;
     const wr = await tx.withdrawRequest.findUnique({
       where: { id: withdrawId },
@@ -429,6 +460,13 @@ export async function markWithdrawPaid(
 
     return { withdraw: updated, user: wr.user };
   });
+
+  realtimeService.notifyAdminEvent({
+    type: "withdrawal_paid",
+    payload: { withdrawalId: withdrawId, userId: res.user.id },
+  });
+
+  return res;
 }
 
 export async function rejectWithdrawRequest(
@@ -437,7 +475,7 @@ export async function rejectWithdrawRequest(
   actorRole: UserRole,
   note?: string
 ) {
-  return prisma.$transaction(async (tx) => {
+  const res = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "WithdrawRequest" WHERE id = ${withdrawId} FOR UPDATE`;
     const wr = await tx.withdrawRequest.findUnique({
       where: { id: withdrawId },
@@ -492,8 +530,19 @@ export async function rejectWithdrawRequest(
       after: { status: "REJECTED", note },
     });
 
-    return { withdraw: updated, user: wr.user };
+    return { withdraw: updated, user: wr.user, newBalance: centsToNumber(newBalance) };
   });
+
+  realtimeService.notifyWalletUpdate(res.user.telegramId, {
+    balance: res.newBalance,
+    reason: "WITHDRAW_REFUNDED",
+  });
+  realtimeService.notifyAdminEvent({
+    type: "withdrawal_rejected",
+    payload: { withdrawalId: withdrawId, userId: res.user.id },
+  });
+
+  return res;
 }
 
 export async function transferBetweenPlayers(
@@ -603,7 +652,7 @@ export async function adminAdjustWallet(
   actorRole: UserRole,
   note: string
 ) {
-  return prisma.$transaction(async (tx) => {
+  const res = await prisma.$transaction(async (tx) => {
     const wallet = await lockAndGetWallet(tx, targetUserId);
     const deltaCents = Math.round(deltaAmount * 100);
     if (deltaCents === 0) throw new Error("ZERO_ADJUSTMENT");
@@ -645,6 +694,23 @@ export async function adminAdjustWallet(
       lockedBalance: centsToNumber(toCents(wallet.lockedBalance)),
     };
   });
+
+  const targetUser = await prisma.user.findUnique({
+    where: { id: targetUserId },
+    select: { telegramId: true },
+  });
+  if (targetUser && targetUser.telegramId) {
+    realtimeService.notifyWalletUpdate(targetUser.telegramId, {
+      balance: res.balance,
+      reason: "ADMIN_ADJUST",
+    });
+  }
+  realtimeService.notifyAdminEvent({
+    type: "user_adjusted",
+    payload: { userId: targetUserId, balance: res.balance },
+  });
+
+  return res;
 }
 
 export async function deductBetTx(

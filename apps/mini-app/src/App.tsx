@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { io } from "socket.io-client";
 import { HelpCircle, Play, AlertCircle } from "lucide-react";
 import { API_BASE_URL } from "./config.js";
 import { RulesScreen } from "./components/RulesScreen.js";
@@ -166,6 +167,39 @@ export default function App() {
     } catch {}
   };
 
+  // Real-time socket connection for live wallet updates
+  useEffect(() => {
+    const tgId = getTelegramId();
+    const socketUrl = API_BASE_URL || (typeof window !== "undefined" ? window.location.origin : "");
+    const s = io(socketUrl, {
+      transports: ["websocket", "polling"],
+      reconnectionAttempts: 30,
+      reconnectionDelay: 2000,
+    });
+
+    if (tgId) {
+      s.emit("join_user", { telegramId: tgId });
+    }
+
+    s.on("connect", () => {
+      const id = getTelegramId();
+      if (id) {
+        s.emit("join_user", { telegramId: id });
+      }
+      handleRefreshUserData();
+    });
+
+    s.on("wallet_update", (data: { balance: number }) => {
+      if (typeof data?.balance === "number") {
+        updateBalance(data.balance);
+      }
+    });
+
+    return () => {
+      s.disconnect();
+    };
+  }, []);
+
   // Fetch live rooms & Telegram user balance
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/rooms`)
@@ -179,6 +213,11 @@ export default function App() {
 
     handleRefreshUserData();
   }, []);
+
+  // Sync latest user wallet balance when switching tabs (e.g. into Wallet, Lobby, Profile)
+  useEffect(() => {
+    handleRefreshUserData();
+  }, [activeTab]);
 
   const handleSelectRoom = async (room: Room) => {
     setSelectedRoom(room);

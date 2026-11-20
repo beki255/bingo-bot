@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { io } from "socket.io-client";
 import { Sidebar } from "./components/Sidebar";
 import { Header } from "./components/Header";
 import { LoginView } from "./views/LoginView";
@@ -13,7 +14,7 @@ import { PaymentAccountsView } from "./views/PaymentAccountsView";
 import { BroadcastView } from "./views/BroadcastView";
 import { SettingsView } from "./views/SettingsView";
 import { AuditLogsView } from "./views/AuditLogsView";
-import { adminFetch, clearAuthToken, getAuthToken } from "./api";
+import { adminFetch, clearAuthToken, getAuthToken, API_BASE } from "./api";
 import type { AdminProfile, AdminTab } from "./types";
 
 const TAB_META: Record<AdminTab, { title: string; subtitle: string }> = {
@@ -124,9 +125,42 @@ export default function App() {
       .catch(() => {});
 
     fetchQuickCounts();
-    const interval = setInterval(fetchQuickCounts, 15000);
-    return () => clearInterval(interval);
+
+    // Real-time socket sync with server
+    const socketUrl = API_BASE || (typeof window !== "undefined" ? window.location.origin : "");
+    const s = io(socketUrl, {
+      transports: ["websocket", "polling"],
+      reconnectionAttempts: 30,
+      reconnectionDelay: 2000,
+    });
+
+    s.emit("join_admin_monitor");
+
+    s.on("connect", () => {
+      s.emit("join_admin_monitor");
+      fetchQuickCounts();
+      setRefreshSignal((c) => c + 1);
+    });
+
+    s.on("admin_event", () => {
+      fetchQuickCounts();
+      setRefreshSignal((c) => c + 1);
+    });
+
+    // Gentle 10-second polling fallback in case of network disruptions
+    const interval = setInterval(fetchQuickCounts, 10000);
+
+    return () => {
+      clearInterval(interval);
+      s.disconnect();
+    };
   }, [admin?.id]);
+
+  useEffect(() => {
+    if (admin) {
+      setRefreshSignal((c) => c + 1);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     const onExpired = () => setAdmin(null);

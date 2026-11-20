@@ -148,6 +148,9 @@ export function createApp() {
       });
       const updatedBalance = freshUser?.wallet ? centsToNumber(toCents(freshUser.wallet.balance)) : 0;
 
+      const { realtimeService } = await import("./services/realtimeService.js");
+      realtimeService.notifyWalletUpdate(user.telegramId, { balance: updatedBalance, reason: "WIN_CLAIMED" });
+
       res.json({ ok: true, newBalance: updatedBalance });
     } catch (err: any) {
       res.status(500).json({ ok: false, error: err.message || "FAILED_CLAIM_WIN" });
