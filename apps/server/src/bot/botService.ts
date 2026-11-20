@@ -1521,6 +1521,12 @@ class BotService {
       options?: { allowUnregistered?: boolean }
     ) => {
       if (!ctx.from) return null;
+      // Always ensure the user's bottom button is the standard Menu list
+      bot.api.setChatMenuButton({
+        chat_id: ctx.from.id,
+        menu_button: { type: "commands" },
+      }).catch(() => {});
+
       const user = await findOrCreateTelegramUser({
         telegramId: BigInt(ctx.from.id),
         firstName: ctx.from.first_name,
@@ -1548,6 +1554,11 @@ class BotService {
     // /start [refCode]
     bot.command("start", async (ctx) => {
       if (!ctx.from) return;
+      bot.api.setChatMenuButton({
+        chat_id: ctx.from.id,
+        menu_button: { type: "commands" },
+      }).catch(() => {});
+
       const startParam = typeof ctx.match === "string" ? ctx.match.trim() : "";
       const user = await findOrCreateTelegramUser({
         telegramId: BigInt(ctx.from.id),
