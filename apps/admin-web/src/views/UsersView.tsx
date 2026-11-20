@@ -661,9 +661,9 @@ export const UsersView: React.FC<UsersViewProps> = ({ admin, refreshSignal }) =>
                           detailUser.referrals.map((r) => (
                             <div
                               key={r.id}
-                              className="bg-[#0a0e18] border border-[#1a233b] rounded-xl px-4 py-3 flex items-center justify-between text-xs"
+                              className="bg-slate-50 dark:bg-[#0a0e18] border border-slate-200 dark:border-[#1a233b] rounded-xl px-4 py-3 flex items-center justify-between text-xs"
                             >
-                              <span className="font-bold text-white">{r.firstName}</span>
+                              <span className="font-bold text-slate-900 dark:text-white">{r.firstName}</span>
                               <span className="text-gray-400">{r.phoneNumber || "Unverified"}</span>
                               <span className="text-gray-500">{formatDateTime(r.createdAt)}</span>
                             </div>

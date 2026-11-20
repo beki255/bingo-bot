@@ -183,13 +183,13 @@ export const DepositsView: React.FC<DepositsViewProps> = ({ refreshSignal, onCou
                   </div>
                 </div>
 
-                <div className="bg-[#0a0e18] border border-[#1a233b] rounded-xl p-3 flex flex-col gap-2">
+                <div className="bg-slate-50 dark:bg-[#0a0e18] border border-slate-200 dark:border-[#1a233b] rounded-xl p-3 flex flex-col gap-2">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-400">Transaction Ref:</span>
-                    <code className="font-mono font-bold text-cyan-400">{dep.transactionRef}</code>
+                    <span className="text-slate-500 dark:text-gray-400">Transaction Ref:</span>
+                    <code className="font-mono font-bold text-blue-600 dark:text-cyan-400">{dep.transactionRef}</code>
                   </div>
                   {dep.receiptText && (
-                    <div className="text-[11px] text-gray-300 bg-[#0f1526] p-2.5 rounded-lg border border-[#1a233b] whitespace-pre-wrap break-words">
+                    <div className="text-[11px] text-slate-800 dark:text-gray-200 bg-slate-100 dark:bg-[#0f1526] p-2.5 rounded-lg border border-slate-200 dark:border-[#1a233b] whitespace-pre-wrap break-words font-mono">
                       {dep.receiptText}
                     </div>
                   )}
@@ -198,7 +198,7 @@ export const DepositsView: React.FC<DepositsViewProps> = ({ refreshSignal, onCou
                       <button
                         type="button"
                         onClick={() => setZoomImageUrl(imgUrl)}
-                        className="group relative rounded-xl overflow-hidden border border-[#1e2945] w-full max-h-56 bg-black flex items-center justify-center"
+                        className="group relative rounded-xl overflow-hidden border border-slate-200 dark:border-[#1e2945] w-full max-h-56 bg-slate-100 dark:bg-black flex items-center justify-center"
                       >
                         <img
                           src={imgUrl}

@@ -190,25 +190,25 @@ export const WithdrawalsView: React.FC<WithdrawalsViewProps> = ({
                 </div>
               </div>
 
-              <div className="bg-[#0a0e18] border border-[#1a233b] rounded-xl p-3.5 flex flex-col gap-2 text-xs">
+              <div className="bg-slate-50 dark:bg-[#0a0e18] border border-slate-200 dark:border-[#1a233b] rounded-xl p-3.5 flex flex-col gap-2 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-400">Account Holder:</span>
-                  <span className="font-bold text-white">{w.accountName}</span>
+                  <span className="text-slate-500 dark:text-gray-400">Account Holder:</span>
+                  <span className="font-bold text-slate-900 dark:text-white">{w.accountName}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-400">Account Number:</span>
+                  <span className="text-slate-500 dark:text-gray-400">Account Number:</span>
                   <button
                     onClick={() => copyText(w.accountNumber)}
-                    className="flex items-center gap-1.5 font-mono font-black text-cyan-400 hover:text-cyan-300"
+                    className="flex items-center gap-1.5 font-mono font-black text-blue-600 dark:text-cyan-400 hover:text-blue-700 dark:hover:text-cyan-300"
                   >
                     <span>{w.accountNumber}</span>
                     <Copy className="w-3.5 h-3.5" />
                   </button>
                 </div>
                 {w.payoutRef && (
-                  <div className="flex items-center justify-between border-t border-[#161f35] pt-2">
-                    <span className="text-gray-400">Payout Ref:</span>
-                    <code className="font-mono text-emerald-400">{w.payoutRef}</code>
+                  <div className="flex items-center justify-between border-t border-slate-200 dark:border-[#161f35] pt-2">
+                    <span className="text-slate-500 dark:text-gray-400">Payout Ref:</span>
+                    <code className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{w.payoutRef}</code>
                   </div>
                 )}
               </div>

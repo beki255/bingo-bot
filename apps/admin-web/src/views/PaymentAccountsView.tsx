@@ -193,7 +193,7 @@ export const PaymentAccountsView: React.FC<PaymentAccountsViewProps> = ({
                 )}
               </div>
 
-              <div className="bg-[#0a0e18] border border-[#1a233b] rounded-xl p-3 font-mono text-sm font-black text-cyan-400">
+              <div className="bg-slate-50 dark:bg-[#0a0e18] border border-slate-200 dark:border-[#1a233b] rounded-xl p-3 font-mono text-sm font-black text-blue-600 dark:text-cyan-400">
                 {acc.accountNumber}
               </div>
 
