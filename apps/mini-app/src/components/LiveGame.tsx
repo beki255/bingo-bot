@@ -162,8 +162,10 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     });
   };
 
-  // 2. Real Game Started Voice: aac_started.mp3 ("ጨዋታው ተጀምሯል")
+  // 2. Real Game Started Voice: aac_started.mp3 ("ጨዋታው ተጀምሯል") - plays strictly once per round
   const playGameStartedSound = () => {
+    if (hasAnnouncedStartRef.current) return;
+    hasAnnouncedStartRef.current = true;
     playAudioFile("aac_started.mp3");
   };
 
