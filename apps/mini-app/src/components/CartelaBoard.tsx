@@ -113,7 +113,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
           );
           if (unpaidCards.length > 0) {
             const unpaidCost = unpaidCards.length * stake;
-            if (onDeductBalance) onDeductBalance(unpaidCost);
+            if (onDeductBalanceRef.current) onDeductBalanceRef.current(unpaidCost);
             if (roomId && telegramId) {
               fetch(`${API_BASE_URL}/api/rooms/${roomId}/buy`, {
                 method: "POST",
@@ -181,7 +181,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
               );
               if (unpaidCards.length > 0) {
                 const unpaidCost = unpaidCards.length * stake;
-                if (onDeductBalance) onDeductBalance(unpaidCost);
+                if (onDeductBalanceRef.current) onDeductBalanceRef.current(unpaidCost);
                 if (roomId && telegramId) {
                   fetch(`${API_BASE_URL}/api/rooms/${roomId}/buy`, {
                     method: "POST",
@@ -262,6 +262,9 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
   const onConfirmPlayRef = useRef(onConfirmPlay);
   onConfirmPlayRef.current = onConfirmPlay;
 
+  const onDeductBalanceRef = useRef(onDeductBalance);
+  onDeductBalanceRef.current = onDeductBalance;
+
   // Live countdown timer: triggers ONLY when countdown is active (>= minPlayers cards registered)
   useEffect(() => {
     if (!isCountdownRunning) return;
@@ -283,8 +286,8 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
             // Deduct the stake for the unpaid playing cards so the wallet drops by (e.g. 120 - 20 = 100):
             if (unpaidCards.length > 0) {
               const unpaidCost = unpaidCards.length * stake;
-              if (onDeductBalance) {
-                onDeductBalance(unpaidCost);
+              if (onDeductBalanceRef.current) {
+                onDeductBalanceRef.current(unpaidCost);
               }
               if (roomId && telegramId) {
                 fetch(`${API_BASE_URL}/api/rooms/${roomId}/buy`, {
@@ -395,8 +398,8 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
           return;
         }
 
-        if (onDeductBalance) {
-          onDeductBalance(totalCost);
+        if (onDeductBalanceRef.current) {
+          onDeductBalanceRef.current(totalCost);
         }
         setLockedUserCards(cardsToBuy);
         lockedUserCardsRef.current = cardsToBuy;
@@ -416,8 +419,8 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     }
 
     // Local state fallback if previewing without Telegram
-    if (onDeductBalance) {
-      onDeductBalance(totalCost);
+    if (onDeductBalanceRef.current) {
+      onDeductBalanceRef.current(totalCost);
     }
     setLockedUserCards(cardsToBuy);
     lockedUserCardsRef.current = cardsToBuy;

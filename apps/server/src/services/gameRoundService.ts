@@ -402,16 +402,6 @@ export class GameRoundService {
     const stakeAmount = Number(round.room.stakeAmount);
     const totalCost = cartelaNumbers.length * stakeAmount;
 
-    // Auto top-up wallet if user's db balance is below required stake so playing/testing is smooth
-    const userBalCents = toCents(user.wallet?.balance ?? 0);
-    const requiredCents = toCents(totalCost);
-    if (userBalCents < requiredCents) {
-      await prisma.wallet.update({
-        where: { userId: user.id },
-        data: { balance: centsToDecimal(toCents(100)) },
-      });
-    }
-
     // 1. Check if any card is already taken in this round
     const existingTickets = await prisma.gameTicket.findMany({
       where: {

@@ -142,12 +142,11 @@ export function createApp() {
         return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
       }
 
-      const round = await gameRoundService.getOrCreateActiveRound(req.params.id);
-      let updatedBalance = 0;
-      await prisma.$transaction(async (tx) => {
-        const balAfter = await creditWinTx(tx, user.id, prizeAmount, round.id);
-        updatedBalance = centsToNumber(toCents(balAfter));
+      const freshUser = await prisma.user.findUnique({
+        where: { id: user.id },
+        include: { wallet: true },
       });
+      const updatedBalance = freshUser?.wallet ? centsToNumber(toCents(freshUser.wallet.balance)) : 0;
 
       res.json({ ok: true, newBalance: updatedBalance });
     } catch (err: any) {

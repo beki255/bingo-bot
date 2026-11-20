@@ -107,7 +107,7 @@ export default function App() {
     });
   };
 
-  const handleWinPrize = (prize: number) => {
+  const handleWinPrize = async (prize: number) => {
     if (prize <= 0) return;
     setUserBalance((prev) => {
       const next = prev + prize;
@@ -117,14 +117,20 @@ export default function App() {
 
     const tgId = getTelegramId();
     if (tgId && selectedRoom) {
-      fetch(`${API_BASE_URL}/api/rooms/${selectedRoom.id}/claim-win`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          telegramId: tgId,
-          prize,
-        }),
-      }).catch(() => {});
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/rooms/${selectedRoom.id}/claim-win`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            telegramId: tgId,
+            prize,
+          }),
+        });
+        const data = await res.json();
+        if (data.ok && typeof data.newBalance === "number") {
+          updateBalance(data.newBalance);
+        }
+      } catch {}
     }
   };
 
@@ -199,6 +205,7 @@ export default function App() {
     setSelectedRoom(null);
     setPlayingCards(null);
     setRegisteredRoundCards([]);
+    handleRefreshUserData();
   };
 
   return (
@@ -223,6 +230,7 @@ export default function App() {
           onNextRound={() => {
             setPlayingCards(null);
             setRegisteredRoundCards([]);
+            handleRefreshUserData();
           }}
         />
       ) : activeTab === "game" && selectedRoom ? (
