@@ -1,4 +1,4 @@
-const API_BASE = ((import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_URL || "").replace(/\/+$/, "");
+export const API_BASE = ((import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_URL || "").replace(/\/+$/, "");
 
 export function getAuthToken(): string | null {
   return localStorage.getItem("bingo_admin_token");

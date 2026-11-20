@@ -1538,6 +1538,7 @@ export function createAdminRouter() {
         ok: true,
         game: {
           id: round.id,
+          roomId: round.roomId,
           roomNameAm: round.room.nameAm,
           roomNameEn: round.room.nameEn,
           stakeAmount: Number(round.room.stakeAmount),

@@ -155,6 +155,10 @@ export interface AdminGameRow {
   startedAt: string | null;
   endedAt: string | null;
   createdAt: string;
+  countdown?: number;
+  currentBall?: { letter: string; num: number } | null;
+  recentCalls?: Array<{ num: number; letter: string }>;
+  pendingSelectionsCount?: number;
 }
 
 export interface AdminTransactionRow {

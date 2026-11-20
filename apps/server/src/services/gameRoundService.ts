@@ -104,6 +104,10 @@ export class GameRoundService {
         roomId,
         pendingSelections: this.getPendingSelections(roomId),
       });
+      this.io.to("admin_monitor").emit("admin_room_selections", {
+        roomId,
+        pendingSelections: this.getPendingSelections(roomId),
+      });
     }
 
     // Automatically start countdown when total active/selected cards in the room meet minPlayers
@@ -127,6 +131,10 @@ export class GameRoundService {
           roomId,
           pendingSelections: this.getPendingSelections(roomId),
         });
+        this.io.to("admin_monitor").emit("admin_room_selections", {
+          roomId,
+          pendingSelections: this.getPendingSelections(roomId),
+        });
       }
     }
   }
@@ -136,6 +144,17 @@ export class GameRoundService {
     this.io.on("connection", (socket) => {
       let currentRoom: string | null = null;
       let currentClient: string = socket.id;
+
+      socket.on("join_admin_monitor", async () => {
+        socket.join("admin_monitor");
+        try {
+          const rooms = await prisma.room.findMany({ where: { isActive: true } });
+          for (const room of rooms) {
+            const state = await this.getRoomState(room.id);
+            socket.emit("admin_room_state", { roomId: room.id, state });
+          }
+        } catch {}
+      });
 
       socket.on("join_room", async (data: any) => {
         const roomId = typeof data === "string" ? data : data?.roomId;
@@ -197,11 +216,13 @@ export class GameRoundService {
   private broadcastRoomState(roomId: string, state: any) {
     if (!this.io) return;
     this.io.to(`room_${roomId}`).emit("room_state", state);
+    this.io.to("admin_monitor").emit("admin_room_state", { roomId, state });
   }
 
   private emitEvent(roomId: string, event: string, payload: any) {
     if (!this.io) return;
     this.io.to(`room_${roomId}`).emit(event, payload);
+    this.io.to("admin_monitor").emit("admin_game_event", { roomId, event, payload });
   }
 
   /**
@@ -441,11 +462,35 @@ export class GameRoundService {
     // 3. Check if threshold of minPlayers/cards is reached to start countdown
     const updatedRound = await prisma.gameRound.findUnique({
       where: { id: round.id },
-      include: { tickets: true, room: true },
+      include: {
+        tickets: {
+          include: {
+            user: { select: { id: true, firstName: true, phoneNumber: true } },
+          },
+        },
+        room: true,
+      },
     });
 
     const totalTicketsCount = updatedRound?.tickets.length || 0;
     const minRequired = updatedRound?.room.minPlayers || 2;
+
+    this.emitEvent(roomId, "ticket_purchased", {
+      roomId,
+      roundId: round.id,
+      cartelaNumbers,
+      telegramId: String(telegramId),
+      ticketsCount: totalTicketsCount,
+      tickets: updatedRound?.tickets.map((t) => ({
+        id: t.id,
+        userName: t.user?.firstName || "Player",
+        userPhone: t.user?.phoneNumber || null,
+        cartelaNumber: t.cartelaNumber,
+        status: t.status,
+        pricePaid: Number(t.pricePaid),
+        prizeWon: Number(t.prizeWon),
+      })),
+    });
 
     if (totalTicketsCount >= minRequired && updatedRound?.status === "WAITING") {
       await this.startCountdown(roomId, round.id);
