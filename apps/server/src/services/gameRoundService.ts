@@ -370,6 +370,14 @@ export class GameRoundService {
     }
     if (!user) throw new Error("USER_NOT_FOUND");
 
+    const round = await this.getOrCreateActiveRound(roomId);
+    if (round.status === "RUNNING" || round.status === "FINISHED") {
+      throw new Error("ROUND_ALREADY_STARTED");
+    }
+
+    const stakeAmount = Number(round.room.stakeAmount);
+    const totalCost = cartelaNumbers.length * stakeAmount;
+
     // Auto top-up wallet if user's db balance is below required stake so playing/testing is smooth
     const userBalCents = toCents(user.wallet?.balance ?? 0);
     const requiredCents = toCents(totalCost);
@@ -379,14 +387,6 @@ export class GameRoundService {
         data: { balance: centsToDecimal(toCents(100)) },
       });
     }
-
-    const round = await this.getOrCreateActiveRound(roomId);
-    if (round.status === "RUNNING" || round.status === "FINISHED") {
-      throw new Error("ROUND_ALREADY_STARTED");
-    }
-
-    const stakeAmount = Number(round.room.stakeAmount);
-    const totalCost = cartelaNumbers.length * stakeAmount;
 
     // 1. Check if any card is already taken in this round
     const existingTickets = await prisma.gameTicket.findMany({
@@ -681,7 +681,6 @@ export class GameRoundService {
     }, intervalMs);
 
     this.callTimers.set(roomId, callTimer);
-  }
   }
 
   /**
