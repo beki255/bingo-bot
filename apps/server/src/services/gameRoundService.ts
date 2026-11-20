@@ -73,6 +73,8 @@ export class GameRoundService {
   private callTimers: Map<string, NodeJS.Timeout> = new Map();
   private countdownTimers: Map<string, NodeJS.Timeout> = new Map();
   private pendingSelections: Map<string, Map<string, number[]>> = new Map();
+  private roomNextGameAvailableAt: Map<string, number> = new Map();
+  private deferredCountdownTimers: Map<string, NodeJS.Timeout> = new Map();
 
   attachIO(io: SocketIOServer) {
     this.io = io;
@@ -367,12 +369,17 @@ export class GameRoundService {
 
     const gameCode = "TB" + (round.id.length > 6 ? round.id.slice(-6).toUpperCase() : round.id.toUpperCase());
 
+    const cooldownEndsAt = this.roomNextGameAvailableAt.get(roomId) || 0;
+    const postGameDelayRemaining = Math.max(0, Math.ceil((cooldownEndsAt - Date.now()) / 1000));
+
     return {
       roomId,
       roundId: round.id,
       gameId: gameCode,
       gameCode,
       status: round.status,
+      postGameDelayRemaining,
+      isPostGameDelay: postGameDelayRemaining > 0,
       stake,
       minPlayers,
       playersCount,
@@ -526,6 +533,35 @@ export class GameRoundService {
    * Starts the live countdown when >= minPlayers cards are registered
    */
   async startCountdown(roomId: string, roundId: string) {
+    const cooldownEndsAt = this.roomNextGameAvailableAt.get(roomId) || 0;
+    const now = Date.now();
+    if (now < cooldownEndsAt) {
+      const waitRemainingMs = cooldownEndsAt - now;
+      if (!this.deferredCountdownTimers.has(roomId)) {
+        const deferredTimer = setTimeout(async () => {
+          this.deferredCountdownTimers.delete(roomId);
+          try {
+            const currentRound = await prisma.gameRound.findUnique({
+              where: { id: roundId },
+              include: { tickets: true, room: true },
+            });
+            if (currentRound && currentRound.status === "WAITING") {
+              const totalSelected = this.getPendingSelections(roomId).length;
+              const totalActive = (currentRound.tickets?.length || 0) + totalSelected;
+              const minRequired = currentRound.room?.minPlayers || 2;
+              if (totalActive >= minRequired) {
+                await this.startCountdown(roomId, roundId);
+              }
+            }
+          } catch (e) {
+            console.error("[GameRound] Deferred countdown error:", e);
+          }
+        }, waitRemainingMs);
+        this.deferredCountdownTimers.set(roomId, deferredTimer);
+      }
+      return;
+    }
+
     const round = await prisma.gameRound.findUnique({
       where: { id: roundId },
       include: { room: true },
@@ -691,12 +727,14 @@ export class GameRoundService {
           where: { id: roundId },
           data: { status: "FINISHED", endedAt: new Date() },
         });
-        this.emitEvent(roomId, "game_ended", { reason: "NO_BALLS_LEFT" });
+        const delaySec = round.room?.nextGameDelaySeconds ?? 6;
+        this.roomNextGameAvailableAt.set(roomId, Date.now() + delaySec * 1000);
+        this.emitEvent(roomId, "game_ended", { reason: "NO_BALLS_LEFT", delaySeconds: delaySec });
         setTimeout(async () => {
           await this.getOrCreateActiveRound(roomId);
           const nextState = await this.getRoomState(roomId);
           this.broadcastRoomState(roomId, nextState);
-        }, 5000);
+        }, delaySec * 1000);
         return;
       }
 
@@ -752,12 +790,14 @@ export class GameRoundService {
           where: { id: roundId },
           data: { status: "FINISHED", endedAt: new Date() },
         });
-        this.emitEvent(roomId, "game_ended", { reason: "ALL_BALLS_CALLED" });
+        const delaySec = round.room?.nextGameDelaySeconds ?? 6;
+        this.roomNextGameAvailableAt.set(roomId, Date.now() + delaySec * 1000);
+        this.emitEvent(roomId, "game_ended", { reason: "ALL_BALLS_CALLED", delaySeconds: delaySec });
         setTimeout(async () => {
           await this.getOrCreateActiveRound(roomId);
           const nextState = await this.getRoomState(roomId);
           this.broadcastRoomState(roomId, nextState);
-        }, 5000);
+        }, delaySec * 1000);
       }
     }, intervalMs);
 
@@ -810,6 +850,7 @@ export class GameRoundService {
     realtimeService.notifyAdminEvent({ type: "game_finished", payload: { roundId, roomId } });
 
     const delaySec = round.room?.nextGameDelaySeconds ?? 6;
+    this.roomNextGameAvailableAt.set(roomId, Date.now() + delaySec * 1000);
 
     const winnersPayload: WinnerResult = {
       winners: winningTickets.map((w) => ({

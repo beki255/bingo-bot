@@ -86,26 +86,32 @@ export const LiveGame: React.FC<LiveGameProps> = ({
   // Real winner celebration state
   const [winnerData, setWinnerData] = useState<WinnerData | null>(null);
   const [nextGameCountdown, setNextGameCountdown] = useState(winnerDelaySeconds || 6);
+  const winnerDataRef = useRef<WinnerData | null>(null);
+  winnerDataRef.current = winnerData;
   const hasAwardedPrizeRef = useRef(false);
   const hasGameEndedRef = useRef(false);
   const hasAnnouncedStartRef = useRef(false);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Countdown timer for next game while winner card is displayed
+  // Countdown timer for next game while winner card is displayed (Only exits when time <= 0 or user clicks Leave)
   useEffect(() => {
     if (!winnerData) return;
     const timer = setInterval(() => {
       setNextGameCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          if (onNextRound) onNextRound();
+          if (onNextRound) {
+            onNextRound();
+          } else if (onLeave) {
+            onLeave();
+          }
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [winnerData, onNextRound]);
+  }, [winnerData, onNextRound, onLeave]);
 
   // Auto-recover if all 75 balls are called without a winner
   useEffect(() => {
@@ -283,7 +289,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       if (typeof state?.ticketsCount === "number") {
         setServerPlayersCount(state.ticketsCount);
       }
-      if (state?.status === "WAITING" && !winnerData) {
+      if (state?.status === "WAITING" && !hasGameEndedRef.current && !winnerDataRef.current) {
         if (onNextRound) onNextRound();
       }
     });
@@ -315,22 +321,23 @@ export const LiveGame: React.FC<LiveGameProps> = ({
         onWinPrize(data?.derash ?? derash);
       }
 
-      setWinnerData({
+      const wData: WinnerData = {
         winners: Array.isArray(data?.winners) && data.winners.length > 0
           ? data.winners
           : [{ name: isUserWinner ? "You (ተጫዋች)" : `Player #${winningCard}`, avatar: isUserWinner ? "U" : "P", cardNo: winningCard }],
         winningCartelaNo: winningCard,
         winningPatternKeys: new Set(data?.winningPatternKeys || []),
-      });
+      };
+      winnerDataRef.current = wData;
+      setWinnerData(wData);
 
       playBingoWinSound();
     });
 
-    s.on("game_ended", () => {
+    s.on("game_ended", (data: any) => {
       hasGameEndedRef.current = true;
-      setTimeout(() => {
-        if (!winnerData && onNextRound) onNextRound();
-      }, 2500);
+      const delay = Number(data?.delaySeconds ?? winnerDelaySeconds ?? 6);
+      setNextGameCountdown(delay);
     });
 
     setSocket(s);
@@ -346,7 +353,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
           if (st.currentBall) setCurrentBall(st.currentBall);
           if (typeof st.derash === "number") setServerDerash(st.derash);
           if (typeof st.ticketsCount === "number") setServerPlayersCount(st.ticketsCount);
-          if (st.status === "WAITING" && !winnerData) {
+          if (st.status === "WAITING" && !hasGameEndedRef.current && !winnerDataRef.current) {
             if (onNextRound) onNextRound();
           }
         }
@@ -363,7 +370,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
           if (st.gameId || st.gameCode) setDisplayGameId(st.gameId || st.gameCode);
           if (Array.isArray(st.calledNumbers)) setCalledNumbers(st.calledNumbers);
           if (st.currentBall) setCurrentBall(st.currentBall);
-          if (st.status === "WAITING" && !winnerData) {
+          if (st.status === "WAITING" && !hasGameEndedRef.current && !winnerDataRef.current) {
             if (onNextRound) onNextRound();
           }
         }
@@ -476,7 +483,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
           } catch {}
         }
 
-        setWinnerData({
+        const wData: WinnerData = {
           winners: [
             {
               name: isUserCard ? "You (ተጫዋች)" : `Player #${cardNo}`,
@@ -486,35 +493,17 @@ export const LiveGame: React.FC<LiveGameProps> = ({
           ],
           winningCartelaNo: cardNo,
           winningPatternKeys: res.winningKeys,
-        });
+        };
+        hasGameEndedRef.current = true;
+        winnerDataRef.current = wData;
+        setWinnerData(wData);
+        setNextGameCountdown(winnerDelaySeconds || 6);
 
         playBingoWinSound();
         return;
       }
     }
-  }, [calledNumbers, registeredCards, cartelaNumbers, derash, onWinPrize, winnerData]);
-
-  // Next game auto-countdown (counts down from 6s to 0s and restarts next round)
-  useEffect(() => {
-    if (!winnerData) return;
-
-    const interval = setInterval(() => {
-      setNextGameCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          if (onNextRound) {
-            onNextRound();
-          } else {
-            onLeave();
-          }
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [winnerData, onNextRound, onLeave]);
+  }, [calledNumbers, registeredCards, cartelaNumbers, derash, onWinPrize, winnerData, winnerDelaySeconds]);
 
   const handleCellClick = (r: number, c: number, cellValue: number) => {
     if (isAutomatic || isWatchingOnly) return;
@@ -815,7 +804,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
                 if (st.currentBall) setCurrentBall(st.currentBall);
                 if (typeof st.derash === "number") setServerDerash(st.derash);
                 if (typeof st.ticketsCount === "number") setServerPlayersCount(st.ticketsCount);
-                if (st.status === "WAITING" && !winnerData) {
+                if (st.status === "WAITING" && !hasGameEndedRef.current && !winnerDataRef.current) {
                   if (onNextRound) onNextRound();
                 }
               }

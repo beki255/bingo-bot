@@ -43,6 +43,16 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
   // Countdown starts when at least minPlayers cards are registered
   const [isCountdownRunning, setIsCountdownRunning] = useState(false);
   const [countdown, setCountdown] = useState(countdownSeconds);
+  const [postGameDelayRemaining, setPostGameDelayRemaining] = useState(0);
+
+  // Decrement post-game delay remaining
+  useEffect(() => {
+    if (postGameDelayRemaining <= 0) return;
+    const t = setInterval(() => {
+      setPostGameDelayRemaining((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [postGameDelayRemaining]);
 
   // Toast notification state for insufficient balance
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -92,6 +102,9 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     });
 
     s.on("room_state", (state: any) => {
+      if (typeof state?.postGameDelayRemaining === "number") {
+        setPostGameDelayRemaining(state.postGameDelayRemaining);
+      }
       if (Array.isArray(state?.takenCards)) {
         setRegisteredCards(state.takenCards);
       }
@@ -139,6 +152,38 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
       }
     });
 
+    s.on("game_started", () => {
+      if (onConfirmPlayRef.current) {
+        const unpaidCards = selectedCardsRef.current.filter(
+          (c) => !lockedUserCardsRef.current.includes(c)
+        );
+        if (unpaidCards.length > 0) {
+          const unpaidCost = unpaidCards.length * stake;
+          if (onDeductBalanceRef.current) onDeductBalanceRef.current(unpaidCost);
+          if (roomId && telegramId) {
+            fetch(`${API_BASE_URL}/api/rooms/${roomId}/buy`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ telegramId, cartelaNumbers: unpaidCards }),
+            }).catch(() => {});
+          }
+          setLockedUserCards((p) => [...p, ...unpaidCards]);
+          lockedUserCardsRef.current = [...lockedUserCardsRef.current, ...unpaidCards];
+        }
+        const userPlayingCards = Array.from(
+          new Set([...lockedUserCardsRef.current, ...selectedCardsRef.current])
+        );
+        const allRoundCards = Array.from(
+          new Set([
+            ...registeredCardsRef.current,
+            ...selectedCardsRef.current,
+            ...otherPendingSelectionsRef.current,
+          ])
+        );
+        onConfirmPlayRef.current(userPlayingCards, allRoundCards);
+      }
+    });
+
     s.on("room_selections", (data: any) => {
       if (Array.isArray(data?.pendingSelections)) {
         setOtherPendingSelections(data.pendingSelections);
@@ -161,6 +206,9 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
         const data = await res.json();
         if (data.ok && data.state) {
           const st = data.state;
+          if (typeof st.postGameDelayRemaining === "number") {
+            setPostGameDelayRemaining(st.postGameDelayRemaining);
+          }
           if (Array.isArray(st.takenCards)) {
             setRegisteredCards(st.takenCards);
           }
@@ -239,13 +287,13 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     return set.size;
   }, [registeredCards, selectedCards, otherPendingSelections]);
 
-  // When total active cards in the room reach minPlayers threshold, start countdown automatically
+  // When total active cards in the room reach minPlayers threshold, start countdown automatically ONLY if post-game delay has expired
   useEffect(() => {
-    if (totalActiveRoomCards >= minPlayers && !isCountdownRunning) {
+    if (totalActiveRoomCards >= minPlayers && !isCountdownRunning && postGameDelayRemaining <= 0) {
       setIsCountdownRunning(true);
       setCountdown(countdownSeconds);
     }
-  }, [totalActiveRoomCards, minPlayers, isCountdownRunning, countdownSeconds]);
+  }, [totalActiveRoomCards, minPlayers, isCountdownRunning, postGameDelayRemaining, countdownSeconds]);
 
   const lockedUserCardsRef = useRef(lockedUserCards);
   lockedUserCardsRef.current = lockedUserCards;
@@ -518,16 +566,24 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
         {/* Countdown / Waiting Status */}
         <div className="bg-[#24211a] rounded-lg py-1 px-2 flex flex-col items-center justify-center border border-amber-500/40 shadow-[0_0_10px_rgba(255,215,0,0.15)]">
           <span className="text-xs font-black text-amber-400 tracking-wider">
-            {isCountdownRunning ? `${countdown} s` : `⏳ ${totalActiveRoomCards}/${minPlayers}`}
+            {postGameDelayRemaining > 0
+              ? `⏳ ${postGameDelayRemaining}s`
+              : isCountdownRunning
+              ? `${countdown} s`
+              : `⏳ ${totalActiveRoomCards}/${minPlayers}`}
           </span>
         </div>
       </div>
 
-      {/* Threshold Status Banner (when waiting for minPlayers cards) */}
+      {/* Threshold Status Banner (when waiting for minPlayers cards or post-game delay) */}
       {!isCountdownRunning && (
         <div className="px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/20 text-center">
           <span className="text-[11px] font-bold text-amber-300">
-            ⏳ ቆጣሪው እንዲጀምር ቢያንስ {minPlayers} ካርቴላዎች መመረጥ አለባቸው ({totalActiveRoomCards}/${minPlayers} ተመርጧል)
+            {postGameDelayRemaining > 0 ? (
+              <span>⏳ ያለፈው ጨዋታ ውጤት እየታየ ነው ({postGameDelayRemaining}s) • ቆጣሪው ከዛ በኋላ ይጀምራል</span>
+            ) : (
+              <span>⏳ ቆጣሪው እንዲጀምር ቢያንስ {minPlayers} ካርቴላዎች መመረጥ አለባቸው ({totalActiveRoomCards}/${minPlayers} ተመርጧል)</span>
+            )}
           </span>
         </div>
       )}
