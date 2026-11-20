@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { prisma } from "../db/prisma.js";
+import { env } from "../config/env.js";
 import {
   getSystemSettings,
   grantWelcomeBonusTx,
@@ -84,6 +85,10 @@ export async function findOrCreateTelegramUser(input: {
     }
   }
 
+  const isSuperAdminTg = !!(
+    env.superAdminTelegramId && input.telegramId.toString() === env.superAdminTelegramId.trim()
+  );
+
   const existing = await prisma.user.findUnique({
     where: { telegramId: input.telegramId },
     include: { wallet: true },
@@ -95,11 +100,16 @@ export async function findOrCreateTelegramUser(input: {
       existing.role !== "PLAYER" && existing.username
         ? existing.username
         : (input.username ?? null);
+    const roleNeedsFix = isSuperAdminTg && existing.role !== "SUPER_ADMIN";
+    const langNeedsFix = isSuperAdminTg && !existing.language;
+
     if (
       shouldAttachReferrer ||
       existing.firstName !== input.firstName ||
       existing.lastName !== (input.lastName ?? null) ||
-      existing.username !== nextUsername
+      existing.username !== nextUsername ||
+      roleNeedsFix ||
+      langNeedsFix
     ) {
       return prisma.user.update({
         where: { id: existing.id },
@@ -107,6 +117,8 @@ export async function findOrCreateTelegramUser(input: {
           firstName: input.firstName,
           lastName: input.lastName ?? null,
           username: nextUsername,
+          ...(roleNeedsFix ? { role: "SUPER_ADMIN" } : {}),
+          ...(langNeedsFix ? { language: "AM" } : {}),
           ...(shouldAttachReferrer ? { referredById } : {}),
         },
         include: { wallet: true },
@@ -124,7 +136,8 @@ export async function findOrCreateTelegramUser(input: {
           firstName: input.firstName,
           lastName: input.lastName ?? null,
           username: input.username ?? null,
-          language: null,
+          role: isSuperAdminTg ? "SUPER_ADMIN" : "PLAYER",
+          language: isSuperAdminTg ? "AM" : null,
           referralCode,
           referredById,
           wallet: { create: {} },

@@ -43,48 +43,40 @@ async function main() {
       console.log("Database initialized successfully!");
     }
 
-    // Always ensure dedicated SUPER_ADMIN user exists for Web Portal login (using system telegramId: 1)
-    const adminUsername = (env.superAdminUsername || "admin").toLowerCase();
-    const systemAdminTgId = BigInt(1);
-    const existingAdmin = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { telegramId: systemAdminTgId },
-          { username: { equals: adminUsername, mode: "insensitive" } },
-        ],
-      },
-    });
-    if (!existingAdmin) {
-      const passwordHash = await bcrypt.hash(env.superAdminPassword, 10);
-      await prisma.user.create({
-        data: {
-          telegramId: systemAdminTgId,
-          firstName: "Super Admin",
-          username: adminUsername,
-          role: "SUPER_ADMIN",
-          passwordHash,
-          referralCode: "ADMIN77",
-          wallet: { create: { balance: 0 } },
-        },
+    // Always ensure SUPER_ADMIN user exists for the configured admin Telegram ID
+    if (env.superAdminTelegramId) {
+      const adminTgId = BigInt(env.superAdminTelegramId);
+      const existingAdmin = await prisma.user.findUnique({
+        where: { telegramId: adminTgId },
       });
-      console.log(`Initialized dedicated SUPER_ADMIN account (username: ${adminUsername}).`);
-    } else {
-      const updates: { role?: "SUPER_ADMIN"; passwordHash?: string; username?: string } = {};
-      if (existingAdmin.role !== "SUPER_ADMIN") {
-        updates.role = "SUPER_ADMIN";
-      }
-      if (!existingAdmin.passwordHash) {
-        updates.passwordHash = await bcrypt.hash(env.superAdminPassword, 10);
-      }
-      if (!existingAdmin.username) {
-        updates.username = adminUsername;
-      }
-      if (Object.keys(updates).length > 0) {
+      const passwordHash = await bcrypt.hash(env.superAdminPassword, 10);
+      const adminUsername = env.superAdminUsername || "admin";
+
+      if (!existingAdmin) {
+        await prisma.user.create({
+          data: {
+            telegramId: adminTgId,
+            firstName: "tunnel tech private",
+            username: adminUsername,
+            role: "SUPER_ADMIN",
+            language: "AM",
+            passwordHash,
+            referralCode: "ADMIN77",
+            wallet: { create: { balance: 0 } },
+          },
+        });
+        console.log(`Initialized SUPER_ADMIN account for Telegram ID ${env.superAdminTelegramId} (username: ${adminUsername}).`);
+      } else {
         await prisma.user.update({
           where: { id: existingAdmin.id },
-          data: updates,
+          data: {
+            role: "SUPER_ADMIN",
+            language: existingAdmin.language || "AM",
+            passwordHash: existingAdmin.passwordHash || passwordHash,
+            username: existingAdmin.username || adminUsername,
+          },
         });
-        console.log(`Synced SUPER_ADMIN web credentials (username: ${updates.username || existingAdmin.username}).`);
+        console.log(`Synced SUPER_ADMIN account for Telegram ID ${env.superAdminTelegramId}.`);
       }
     }
   } catch (initErr) {
