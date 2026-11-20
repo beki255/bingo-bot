@@ -18,7 +18,7 @@ export const env = {
   port: Number(process.env.PORT || 3001),
   nodeEnv: process.env.NODE_ENV || "development",
   databaseUrl: process.env.DATABASE_URL || "",
-  botToken: (process.env.BOT_TOKEN || "").trim(),
+  botToken: (process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || "").trim(),
   botUsername: (process.env.BOT_USERNAME || "").trim(),
   botName: (process.env.BOT_NAME || "Tunnel Bingo").trim(),
   welcomeBannerUrl: (
