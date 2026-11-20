@@ -312,7 +312,7 @@ export class GameRoundService {
       : null;
 
     const recentCalls = round.calledNumbers
-      .slice(-4)
+      .slice(-3)
       .reverse()
       .map((num) => ({
         num,
@@ -632,7 +632,7 @@ export class GameRoundService {
 
       const letter = getLetterForNumber(nextNum);
       const recentCalls = nextCalled
-        .slice(-4)
+        .slice(-3)
         .reverse()
         .map((n) => ({ num: n, letter: getLetterForNumber(n) }));
 

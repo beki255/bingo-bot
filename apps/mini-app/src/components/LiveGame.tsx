@@ -169,10 +169,10 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     }
   };
 
-  // Last 4 called numbers (newest on the left, up to 4 recent calls)
+  // Last 3 called numbers (newest on the left, up to 3 recent calls)
   const recentCalls = useMemo(() => {
     return calledNumbers
-      .slice(-4)
+      .slice(-3)
       .reverse()
       .map((num) => ({
         num,
@@ -586,7 +586,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
         <div className="flex-1 flex flex-col justify-between gap-1.5">
           {/* Top: Live Ball Caller Box */}
           <div className="bg-[#12142d] rounded-xl border border-white/10 p-2 flex flex-col items-center justify-center relative shadow-lg">
-            {/* Header controls: Recent 4 Calls Tray + Sound */}
+            {/* Header controls: Recent 3 Calls Tray + Sound */}
             <div className="w-full flex items-center justify-between text-xs px-1 mb-1 gap-1">
               <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5 max-w-[170px]">
                 {recentCalls.length > 0 ? (
