@@ -389,7 +389,6 @@ export function createApp() {
   const candidateSounds = [
     path.resolve(__dirname, "../../mini-app/dist/sounds"),
     path.resolve(__dirname, "../../mini-app/public/sounds"),
-    path.resolve(__dirname, "../../../sounds"),
   ];
   for (const sPath of candidateSounds) {
     if (fs.existsSync(sPath)) {
