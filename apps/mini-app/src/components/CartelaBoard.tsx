@@ -270,6 +270,10 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(interval);
+          try {
+            const startAudio = new Audio("/sounds/aac_started.mp3");
+            startAudio.play().catch(() => {});
+          } catch {}
           if (onConfirmPlayRef.current) {
             // Find any selected cards that user picked but hasn't paid for yet:
             const unpaidCards = selectedCardsRef.current.filter(

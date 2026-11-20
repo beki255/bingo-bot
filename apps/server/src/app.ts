@@ -385,6 +385,19 @@ export function createApp() {
     }
   });
 
+  // Serve audio sound assets directly
+  const candidateSounds = [
+    path.resolve(__dirname, "../../mini-app/dist/sounds"),
+    path.resolve(__dirname, "../../mini-app/public/sounds"),
+    path.resolve(__dirname, "../../../sounds"),
+  ];
+  for (const sPath of candidateSounds) {
+    if (fs.existsSync(sPath)) {
+      app.use("/sounds", express.static(sPath));
+      break;
+    }
+  }
+
   // Serve built Admin Web Portal at /admin
   const adminWebDist = path.resolve(__dirname, "../../admin-web/dist");
   if (fs.existsSync(adminWebDist)) {
@@ -404,7 +417,8 @@ export function createApp() {
         req.path.startsWith("/admin") ||
         req.path.startsWith("/health") ||
         req.path.startsWith("/ping") ||
-        req.path.startsWith("/socket.io")
+        req.path.startsWith("/socket.io") ||
+        req.path.startsWith("/sounds")
       ) {
         return next();
       }

@@ -572,6 +572,8 @@ export class GameRoundService {
     // Start timer and register it BEFORE getRoomState to prevent any race condition
     this.startBallCallingTimer(roomId, roundId, intervalMs);
 
+    this.emitEvent(roomId, "game_started", { roomId, roundId });
+
     const state = await this.getRoomState(roomId);
     this.broadcastRoomState(roomId, state);
   }

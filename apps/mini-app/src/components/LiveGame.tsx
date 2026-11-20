@@ -86,42 +86,70 @@ export const LiveGame: React.FC<LiveGameProps> = ({
   const [nextGameCountdown, setNextGameCountdown] = useState(6);
   const hasAwardedPrizeRef = useRef(false);
   const hasGameEndedRef = useRef(false);
+  const hasAnnouncedStartRef = useRef(false);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Sound caller using Web Audio API
-  const playBallSound = (num: number) => {
+  // Helper to play MP3 recording from /sounds/ with synthesizer fallback
+  const playAudioFile = (filename: string, fallback?: () => void) => {
     if (!soundEnabled) return;
     try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(520, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12);
-      gain.gain.setValueAtTime(0.18, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.18);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.2);
-    } catch {}
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current.currentTime = 0;
+      }
+      const audio = new Audio(`/sounds/${filename}`);
+      currentAudioRef.current = audio;
+      audio.play().catch(() => {
+        if (fallback) fallback();
+      });
+    } catch {
+      if (fallback) fallback();
+    }
   };
 
-  const playBingoWinSound = () => {
-    if (!soundEnabled) return;
-    try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+  // 1. Real Ball Call Voice: 1.mp3 to 75.mp3
+  const playBallSound = (num: number) => {
+    playAudioFile(`${num}.mp3`, () => {
+      try {
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-        osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.12);
-        gain.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.12);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.12 + 0.35);
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(520, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.18);
         osc.connect(gain);
         gain.connect(ctx.destination);
-        osc.start(ctx.currentTime + i * 0.12);
-        osc.stop(ctx.currentTime + i * 0.12 + 0.4);
-      });
-    } catch {}
+        osc.start();
+        osc.stop(ctx.currentTime + 0.2);
+      } catch {}
+    });
+  };
+
+  // 2. Real Game Started Voice: aac_started.mp3 ("ጨዋታው ተጀምሯል")
+  const playGameStartedSound = () => {
+    playAudioFile("aac_started.mp3");
+  };
+
+  // 3. Real Bingo Winner Sound: Bingo.mp3
+  const playBingoWinSound = () => {
+    playAudioFile("Bingo.mp3", () => {
+      try {
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.12);
+          gain.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.12);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.12 + 0.35);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(ctx.currentTime + i * 0.12);
+          osc.stop(ctx.currentTime + i * 0.12 + 0.4);
+        });
+      } catch {}
+    });
   };
 
   // Generate 5x5 grid for active cartela (if playing)
@@ -189,6 +217,14 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     setMarkedCells(initMarked);
   }, [cartelaNumbers, freeCenter]);
 
+  // Voice announcement: "ጨዋታው ተጀምሯል" (aac_started.mp3) on game start
+  useEffect(() => {
+    if (!hasAnnouncedStartRef.current && calledNumbers.length <= 1) {
+      hasAnnouncedStartRef.current = true;
+      playGameStartedSound();
+    }
+  }, []);
+
   // Real-time server Socket.IO multiplayer connection
   useEffect(() => {
     if (!roomId) return;
@@ -221,6 +257,10 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       if (state?.status === "WAITING" && hasGameEndedRef.current) {
         if (onNextRound) onNextRound();
       }
+    });
+
+    s.on("game_started", () => {
+      playGameStartedSound();
     });
 
     s.on("ball_called", (data: any) => {
