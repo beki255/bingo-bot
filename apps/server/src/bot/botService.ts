@@ -1,8 +1,12 @@
 import crypto from "node:crypto";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Bot, InlineKeyboard, InputFile, Keyboard } from "grammy";
 import type { Language, Prisma } from "@prisma/client";
 import type { Server as SocketIOServer } from "socket.io";
 import fs from "node:fs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { env } from "../config/env.js";
 import { prisma } from "../db/prisma.js";
 import { recordAuditLog } from "../services/auditService.js";
@@ -262,6 +266,25 @@ class BotService {
     });
   }
 
+  private getBundledBannerPath(): string | null {
+    const candidates = [
+      path.resolve(process.cwd(), "apps/server/assets/welcome_banner.jpg"),
+      path.resolve(process.cwd(), "assets/welcome_banner.jpg"),
+      path.resolve(__dirname, "../../assets/welcome_banner.jpg"),
+      path.resolve(__dirname, "../assets/welcome_banner.jpg"),
+      path.resolve(__dirname, "../../../apps/server/assets/welcome_banner.jpg"),
+      path.resolve(process.cwd(), "apps/mini-app/public/assets/welcome_banner.jpg"),
+    ];
+    for (const p of candidates) {
+      try {
+        if (fs.existsSync(p)) return p;
+      } catch {
+        // ignore
+      }
+    }
+    return null;
+  }
+
   private async sendBannerOrText(
     sendPhoto: (photo: string | InputFile, opts: object) => Promise<unknown>,
     sendText: (text: string, opts: object) => Promise<unknown>,
@@ -269,8 +292,14 @@ class BotService {
     replyMarkup: InlineKeyboard
   ) {
     const settings = await getSystemSettings();
-    const banner = settings.welcomeBannerUrl.trim() || env.welcomeBannerUrl.trim();
+    const bundledPath = this.getBundledBannerPath();
+    let banner = settings.welcomeBannerUrl.trim() || env.welcomeBannerUrl.trim();
+    if (!banner && bundledPath) {
+      banner = bundledPath;
+    }
+
     if (banner) {
+      // 1. First attempt: try sending the configured banner or cached Telegram fileId
       try {
         let photoArg: string | InputFile;
         if (this.cachedBanner && this.cachedBanner.source === banner) {
@@ -279,24 +308,57 @@ class BotService {
           photoArg = banner;
         } else if (fs.existsSync(banner)) {
           photoArg = new InputFile(banner);
+        } else if (bundledPath && (banner.startsWith("C:") || banner.startsWith("/") || banner.includes("\\"))) {
+          // Stale local path that does not exist in this environment -> use bundled asset
+          photoArg = new InputFile(bundledPath);
         } else {
-          photoArg = banner; // Telegram file_id uploaded via Admin Bot
+          // Assume Telegram file_id
+          photoArg = banner;
         }
+
         const sent = (await sendPhoto(photoArg, {
           caption,
           parse_mode: "HTML",
           reply_markup: replyMarkup,
         })) as { photo?: Array<{ file_id: string }> } | undefined;
+
         const uploadedFileId = sent?.photo?.[sent.photo.length - 1]?.file_id;
         if (uploadedFileId && (!this.cachedBanner || this.cachedBanner.source !== banner)) {
           this.cachedBanner = { source: banner, fileId: uploadedFileId };
         }
         return;
       } catch (err) {
-        console.error("Failed sending welcome banner photo, falling back to text:", err);
+        console.warn("Welcome banner photo send failed with primary source, attempting bundled fallback:", err);
+      }
+
+      // 2. Self-healing fallback:
+      // If the primary attempt failed (e.g. stale Telegram file_id from a revoked bot token, or missing path),
+      // upload the bundled welcome banner asset directly as an InputFile.
+      if (bundledPath) {
+        try {
+          const sent = (await sendPhoto(new InputFile(bundledPath), {
+            caption,
+            parse_mode: "HTML",
+            reply_markup: replyMarkup,
+          })) as { photo?: Array<{ file_id: string }> } | undefined;
+
+          const uploadedFileId = sent?.photo?.[sent.photo.length - 1]?.file_id;
+          if (uploadedFileId) {
+            this.cachedBanner = { source: bundledPath, fileId: uploadedFileId };
+            // Persist the new valid file_id to the database so future sends are instantaneous
+            await prisma.systemSettings.update({
+              where: { id: 1 },
+              data: { welcomeBannerUrl: uploadedFileId },
+            }).catch((e) => console.error("Failed saving healed welcome banner file_id:", e));
+          }
+          return;
+        } catch (err2) {
+          console.error("Failed sending bundled welcome banner fallback:", err2);
+        }
       }
     }
 
+    // 3. Fallback to clean HTML text
     await sendText(caption, { parse_mode: "HTML", reply_markup: replyMarkup });
   }
 

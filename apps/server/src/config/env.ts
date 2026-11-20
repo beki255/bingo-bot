@@ -23,7 +23,7 @@ export const env = {
   botName: (process.env.BOT_NAME || "Tunnel Bingo").trim(),
   welcomeBannerUrl: (
     process.env.WELCOME_BANNER_URL ||
-    "C:/Users/HP/.gemini/antigravity/brain/b8354e76-8edb-40b0-94af-9082a031ac7b/.user_uploaded/media_1794577990868_53b7b1d7.jpg"
+    path.resolve(__dirname, "../../assets/welcome_banner.jpg")
   ).trim(),
   supportUsername: (process.env.SUPPORT_USERNAME || "").trim(),
   miniAppUrl: miniAppUrlRaw,
