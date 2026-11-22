@@ -115,6 +115,14 @@ async function main() {
       ) {
         updates.botName = "Zemen Bingo";
       }
+      // Reset any old cached Telegram file_id so the new Zemen Bingo bundled welcome_banner.jpg is uploaded fresh
+      if (
+        existingSettings.welcomeBannerUrl &&
+        !existingSettings.welcomeBannerUrl.startsWith("http://") &&
+        !existingSettings.welcomeBannerUrl.startsWith("https://")
+      ) {
+        updates.welcomeBannerUrl = "";
+      }
       if (Object.keys(updates).length > 0) {
         await prisma.systemSettings.update({
           where: { id: 1 },

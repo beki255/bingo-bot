@@ -376,10 +376,9 @@ class BotService {
   ) {
     const settings = await getSystemSettings();
     const bundledPath = this.getBundledBannerPath();
-    let banner = settings.welcomeBannerUrl.trim() || env.welcomeBannerUrl.trim();
-    if (!banner && bundledPath) {
-      banner = bundledPath;
-    }
+    const customUrl = settings.welcomeBannerUrl.trim();
+    const isCustomHttpUrl = customUrl.startsWith("http://") || customUrl.startsWith("https://");
+    let banner = isCustomHttpUrl ? customUrl : (bundledPath || customUrl || env.welcomeBannerUrl.trim());
 
     if (banner) {
       // 1. First attempt: try sending the configured banner or cached Telegram fileId
@@ -428,11 +427,6 @@ class BotService {
           const uploadedFileId = sent?.photo?.[sent.photo.length - 1]?.file_id;
           if (uploadedFileId) {
             this.cachedBanner = { source: bundledPath, fileId: uploadedFileId };
-            // Persist the new valid file_id to the database so future sends are instantaneous
-            await prisma.systemSettings.update({
-              where: { id: 1 },
-              data: { welcomeBannerUrl: uploadedFileId },
-            }).catch((e) => console.error("Failed saving healed welcome banner file_id:", e));
           }
           return;
         } catch (err2) {
