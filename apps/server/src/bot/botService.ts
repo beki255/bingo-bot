@@ -746,7 +746,11 @@ class BotService {
     reply: (text: string, opts?: object) => Promise<unknown>
   ) {
     const settings = await getSystemSettings();
-    const custom = lang === "AM" ? settings.instructionAm.trim() : settings.instructionEn.trim();
+    const rawCustom = lang === "AM" ? settings.instructionAm.trim() : settings.instructionEn.trim();
+    const isOldPlaceholder =
+      rawCustom.includes("1. ከ1 እስከ 600 ካሉት ቁጥሮች ይምረጡ።") ||
+      rawCustom.includes("1. Pick from 1 to 600.");
+    const custom = isOldPlaceholder ? "" : rawCustom;
     const msg = custom
       ? escapeHtml(custom)
       : lang === "AM"
@@ -1796,25 +1800,17 @@ class BotService {
     });
 
     bot.command("instruction", async (ctx) => {
-      const user = await ensureOnboarded(ctx);
+      const user = await ensureOnboarded(ctx, { allowUnregistered: true });
       if (!user) return;
-      if (this.isAdminRole(user.role)) {
-        await this.sendAdminPanel((text, opts) => ctx.reply(text, opts), user);
-        return;
-      }
       await this.setBotState(user.id, null);
-      await this.sendInstruction(user.language!, (text, opts) => ctx.reply(text, opts));
+      await this.sendInstruction(user.language || "AM", (text, opts) => ctx.reply(text, opts));
     });
 
     bot.command("support", async (ctx) => {
-      const user = await ensureOnboarded(ctx);
+      const user = await ensureOnboarded(ctx, { allowUnregistered: true });
       if (!user) return;
-      if (this.isAdminRole(user.role)) {
-        await this.sendAdminPanel((text, opts) => ctx.reply(text, opts), user);
-        return;
-      }
       await this.setBotState(user.id, null);
-      await this.sendSupport(user.language!, (text, opts) => ctx.reply(text, opts));
+      await this.sendSupport(user.language || "AM", (text, opts) => ctx.reply(text, opts));
     });
 
     bot.command(["language", "lang"], async (ctx) => {
@@ -2409,6 +2405,19 @@ class BotService {
           (text, opts) => ctx.reply(text, opts),
           chosen
         );
+        return;
+      }
+
+      // Allow anyone (including unregistered users or admins testing the welcome menu) to view Instruction & Support
+      if (data === "menu:instruction") {
+        await ctx.answerCallbackQuery();
+        await this.sendInstruction(caller.language || "AM", (text, opts) => ctx.reply(text, opts));
+        return;
+      }
+
+      if (data === "menu:support") {
+        await ctx.answerCallbackQuery();
+        await this.sendSupport(caller.language || "AM", (text, opts) => ctx.reply(text, opts));
         return;
       }
 

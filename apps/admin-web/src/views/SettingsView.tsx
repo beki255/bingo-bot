@@ -480,6 +480,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ admin, onAdminUpdate
                   className="w-full bg-[#0a0e18] border border-[#1a233b] rounded-xl px-3 py-2 text-xs text-white font-mono"
                 />
               </div>
+              <div>
+                <label className="text-xs font-bold text-gray-300 block mb-1">
+                  Bot Instruction / መመሪያ (Amharic)
+                </label>
+                <textarea
+                  rows={7}
+                  disabled={!isSuperAdmin}
+                  value={settings.instructionAm || ""}
+                  onChange={(e) => setSettings({ ...settings, instructionAm: e.target.value })}
+                  className="w-full bg-[#0a0e18] border border-[#1a233b] rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-300 block mb-1">
+                  Bot Instruction (English)
+                </label>
+                <textarea
+                  rows={7}
+                  disabled={!isSuperAdmin}
+                  value={settings.instructionEn || ""}
+                  onChange={(e) => setSettings({ ...settings, instructionEn: e.target.value })}
+                  className="w-full bg-[#0a0e18] border border-[#1a233b] rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
             </div>
           </div>
         </form>
