@@ -94,6 +94,26 @@ export const LiveGame: React.FC<LiveGameProps> = ({
   const hasGameEndedRef = useRef(false);
   const hasAnnouncedStartRef = useRef(false);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCacheRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+
+  // Cached audio getter with auto preloading to eliminate loading jitter and cutting off
+  const getAudio = (filename: string): HTMLAudioElement => {
+    let audio = audioCacheRef.current.get(filename);
+    if (!audio) {
+      audio = new Audio(`/sounds/${filename}`);
+      audio.preload = "auto";
+      audioCacheRef.current.set(filename, audio);
+    }
+    return audio;
+  };
+
+  // Preload essential game sounds on mount
+  useEffect(() => {
+    try {
+      getAudio("aac_started.mp3");
+      getAudio("Bingo.mp3");
+    } catch {}
+  }, []);
 
   // Countdown timer for next game while winner card is displayed (Only exits when time <= 0 or user clicks Leave)
   useEffect(() => {
@@ -126,19 +146,30 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     }
   }, [calledNumbers.length, winnerData, onNextRound]);
 
-  // Helper to play MP3 recording from /sounds/ with synthesizer fallback
+  // Helper to play MP3 recording from /sounds/ with smooth transitions, 0 network latency and no stuttering
   const playAudioFile = (filename: string, fallback?: () => void) => {
     if (!soundEnabled) return;
     try {
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause();
-        currentAudioRef.current.currentTime = 0;
+      const audio = getAudio(filename);
+
+      // Stop previous audio cleanly if still playing
+      if (currentAudioRef.current && currentAudioRef.current !== audio) {
+        try {
+          currentAudioRef.current.pause();
+          currentAudioRef.current.currentTime = 0;
+        } catch {}
       }
-      const audio = new Audio(`/sounds/${filename}`);
+
       currentAudioRef.current = audio;
-      audio.play().catch(() => {
-        if (fallback) fallback();
-      });
+      audio.currentTime = 0;
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          // Ignore AbortError caused by stopping previous audio
+          if (err?.name === "AbortError") return;
+          if (fallback) fallback();
+        });
+      }
     } catch {
       if (fallback) fallback();
     }

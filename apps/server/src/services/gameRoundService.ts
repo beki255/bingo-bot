@@ -690,124 +690,148 @@ export class GameRoundService {
 
   /**
    * Dedicated ball calling timer that draws balls at intervalMs and checks for win
+   * Uses a self-pacing recursive timer to guarantee strictly even gaps and prevent DB race conditions.
    */
   startBallCallingTimer(roomId: string, roundId: string, intervalMs: number = 3500) {
     const existing = this.callTimers.get(roomId);
-    if (existing) clearInterval(existing);
+    if (existing) {
+      clearInterval(existing);
+      clearTimeout(existing);
+    }
 
-    const callTimer = setInterval(async () => {
-      const round = await prisma.gameRound.findUnique({
-        where: { id: roundId },
-        include: {
-          room: true,
-          tickets: {
-            include: {
-              user: { select: { id: true, firstName: true, username: true, telegramId: true } },
+    let isStopped = false;
+
+    const tick = async () => {
+      if (isStopped) return;
+      const startTime = Date.now();
+
+      try {
+        const round = await prisma.gameRound.findUnique({
+          where: { id: roundId },
+          include: {
+            room: true,
+            tickets: {
+              include: {
+                user: { select: { id: true, firstName: true, username: true, telegramId: true } },
+              },
             },
           },
-        },
-      });
+        });
 
-      if (!round || round.status !== "RUNNING" || round.tickets.length === 0) {
-        clearInterval(callTimer);
-        this.callTimers.delete(roomId);
-        if (round && round.tickets.length === 0) {
+        if (!round || round.status !== "RUNNING" || round.tickets.length === 0) {
+          isStopped = true;
+          this.callTimers.delete(roomId);
+          if (round && round.tickets.length === 0) {
+            await prisma.gameRound.update({
+              where: { id: roundId },
+              data: { status: "FINISHED", endedAt: new Date() },
+            });
+            setTimeout(async () => {
+              await this.getOrCreateActiveRound(roomId);
+              const nextState = await this.getRoomState(roomId);
+              this.broadcastRoomState(roomId, nextState);
+            }, 1000);
+          }
+          return;
+        }
+
+        const remainingDeck = [...round.shuffledDeck];
+        if (remainingDeck.length === 0) {
+          isStopped = true;
+          this.callTimers.delete(roomId);
           await prisma.gameRound.update({
             where: { id: roundId },
             data: { status: "FINISHED", endedAt: new Date() },
           });
+          const delaySec = round.room?.nextGameDelaySeconds ?? 6;
+          this.roomNextGameAvailableAt.set(roomId, Date.now() + delaySec * 1000);
+          this.emitEvent(roomId, "game_ended", { reason: "NO_BALLS_LEFT", delaySeconds: delaySec });
           setTimeout(async () => {
             await this.getOrCreateActiveRound(roomId);
             const nextState = await this.getRoomState(roomId);
             this.broadcastRoomState(roomId, nextState);
-          }, 1000);
+          }, delaySec * 1000);
+          return;
         }
-        return;
-      }
 
-      const remainingDeck = [...round.shuffledDeck];
-      if (remainingDeck.length === 0) {
-        clearInterval(callTimer);
-        this.callTimers.delete(roomId);
+        const nextNum = remainingDeck.shift()!;
+        const nextCalled = [...round.calledNumbers, nextNum];
+
         await prisma.gameRound.update({
           where: { id: roundId },
-          data: { status: "FINISHED", endedAt: new Date() },
+          data: {
+            calledNumbers: nextCalled,
+            shuffledDeck: remainingDeck,
+          },
         });
-        const delaySec = round.room?.nextGameDelaySeconds ?? 6;
-        this.roomNextGameAvailableAt.set(roomId, Date.now() + delaySec * 1000);
-        this.emitEvent(roomId, "game_ended", { reason: "NO_BALLS_LEFT", delaySeconds: delaySec });
-        setTimeout(async () => {
-          await this.getOrCreateActiveRound(roomId);
-          const nextState = await this.getRoomState(roomId);
-          this.broadcastRoomState(roomId, nextState);
-        }, delaySec * 1000);
-        return;
-      }
 
-      const nextNum = remainingDeck.shift()!;
-      const nextCalled = [...round.calledNumbers, nextNum];
+        const letter = getLetterForNumber(nextNum);
+        const recentCalls = nextCalled
+          .slice(-3)
+          .reverse()
+          .map((n) => ({ num: n, letter: getLetterForNumber(n) }));
 
-      await prisma.gameRound.update({
-        where: { id: roundId },
-        data: {
+        this.emitEvent(roomId, "ball_called", {
+          ball: { letter, num: nextNum },
           calledNumbers: nextCalled,
-          shuffledDeck: remainingDeck,
-        },
-      });
-
-      const letter = getLetterForNumber(nextNum);
-      const recentCalls = nextCalled
-        .slice(-3)
-        .reverse()
-        .map((n) => ({ num: n, letter: getLetterForNumber(n) }));
-
-      this.emitEvent(roomId, "ball_called", {
-        ball: { letter, num: nextNum },
-        calledNumbers: nextCalled,
-        recentCalls,
-      });
-
-      // Check REAL tickets for winner
-      const calledSet = new Set(nextCalled);
-      const freeCenter = round.room?.freeCenter ?? true;
-      const winningTickets: Array<{
-        ticket: typeof round.tickets[0];
-        keys: Set<string>;
-      }> = [];
-
-      for (const ticket of round.tickets) {
-        const grid = generateDeterministicCartela(ticket.cartelaNumber);
-        const win = checkCartelaWin(grid, calledSet, freeCenter);
-        if (win.hasWon) {
-          winningTickets.push({ ticket, keys: win.winningKeys });
-        }
-      }
-
-      // If at least one REAL player won!
-      if (winningTickets.length > 0) {
-        clearInterval(callTimer);
-        this.callTimers.delete(roomId);
-        await this.handleWinner(roomId, roundId, winningTickets);
-      } else if (nextCalled.length >= 75 || remainingDeck.length === 0) {
-        // All 75 balls called without winner
-        clearInterval(callTimer);
-        this.callTimers.delete(roomId);
-        await prisma.gameRound.update({
-          where: { id: roundId },
-          data: { status: "FINISHED", endedAt: new Date() },
+          recentCalls,
         });
-        const delaySec = round.room?.nextGameDelaySeconds ?? 6;
-        this.roomNextGameAvailableAt.set(roomId, Date.now() + delaySec * 1000);
-        this.emitEvent(roomId, "game_ended", { reason: "ALL_BALLS_CALLED", delaySeconds: delaySec });
-        setTimeout(async () => {
-          await this.getOrCreateActiveRound(roomId);
-          const nextState = await this.getRoomState(roomId);
-          this.broadcastRoomState(roomId, nextState);
-        }, delaySec * 1000);
-      }
-    }, intervalMs);
 
-    this.callTimers.set(roomId, callTimer);
+        // Check REAL tickets for winner
+        const calledSet = new Set(nextCalled);
+        const freeCenter = round.room?.freeCenter ?? true;
+        const winningTickets: Array<{
+          ticket: typeof round.tickets[0];
+          keys: Set<string>;
+        }> = [];
+
+        for (const ticket of round.tickets) {
+          const grid = generateDeterministicCartela(ticket.cartelaNumber);
+          const win = checkCartelaWin(grid, calledSet, freeCenter);
+          if (win.hasWon) {
+            winningTickets.push({ ticket, keys: win.winningKeys });
+          }
+        }
+
+        // If at least one REAL player won!
+        if (winningTickets.length > 0) {
+          isStopped = true;
+          this.callTimers.delete(roomId);
+          await this.handleWinner(roomId, roundId, winningTickets);
+          return;
+        } else if (nextCalled.length >= 75 || remainingDeck.length === 0) {
+          // All 75 balls called without winner
+          isStopped = true;
+          this.callTimers.delete(roomId);
+          await prisma.gameRound.update({
+            where: { id: roundId },
+            data: { status: "FINISHED", endedAt: new Date() },
+          });
+          const delaySec = round.room?.nextGameDelaySeconds ?? 6;
+          this.roomNextGameAvailableAt.set(roomId, Date.now() + delaySec * 1000);
+          this.emitEvent(roomId, "game_ended", { reason: "ALL_BALLS_CALLED", delaySeconds: delaySec });
+          setTimeout(async () => {
+            await this.getOrCreateActiveRound(roomId);
+            const nextState = await this.getRoomState(roomId);
+            this.broadcastRoomState(roomId, nextState);
+          }, delaySec * 1000);
+          return;
+        }
+      } catch (err) {
+        console.error(`[Round ${roundId}] Error in ball draw:`, err);
+      }
+
+      // Schedule next ball with precise pacing to maintain exact intervalMs:
+      if (!isStopped && this.callTimers.has(roomId)) {
+        const elapsed = Date.now() - startTime;
+        const delay = Math.max(1200, intervalMs - elapsed);
+        const nextTimer = setTimeout(tick, delay);
+        this.callTimers.set(roomId, nextTimer);
+      }
+    };
+
+    const firstTimer = setTimeout(tick, intervalMs);
+    this.callTimers.set(roomId, firstTimer);
   }
 
   /**
