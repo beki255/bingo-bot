@@ -40,6 +40,10 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
   const [otherPendingSelections, setOtherPendingSelections] = useState<number[]>([]);
   const [socket, setSocket] = useState<Socket | null>(null);
 
+  // Active playing cards (locked or currently selected)
+  const activeUserCards = lockedUserCards.length > 0 ? lockedUserCards : selectedCards;
+  const isUserPlaying = activeUserCards.length > 0;
+
   // Countdown starts when at least minPlayers cards are registered
   const [isCountdownRunning, setIsCountdownRunning] = useState(false);
   const [countdown, setCountdown] = useState(countdownSeconds);
@@ -535,14 +539,14 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
         </button>
 
         <div className="flex items-center gap-2">
-          {/* Watching Only Status Badge (Non-clickable visual indicator) */}
-          {lockedUserCards.length > 0 ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-[11px] font-bold text-emerald-300 border border-emerald-500/30">
+          {/* Watching Only Status Badge: Disappears as soon as any card is selected, reappears on unselect */}
+          {isUserPlaying ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-[11px] font-bold text-emerald-300 border border-emerald-500/30 transition-all duration-200">
               <Check className="w-3.5 h-3.5" />
-              <span>ተጫዋች (#{lockedUserCards.join(", ")})</span>
+              <span>ተጫዋች (#{activeUserCards.join(", ")})</span>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-600/25 text-[11px] font-bold text-purple-300 border border-purple-500/30">
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-600/25 text-[11px] font-bold text-purple-300 border border-purple-500/30 transition-all duration-200">
               <Eye className="w-3.5 h-3.5" />
               <span>Watching Only</span>
             </div>
