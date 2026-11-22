@@ -263,15 +263,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, refres
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-slate-900 dark:text-white">{r.nameAm}</span>
                 <span
-                  className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full border shadow-sm ${
+                  className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-0.5 rounded-full border shadow-sm ${
                     r.currentRoundStatus === "RUNNING"
-                      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                      ? "bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30"
                       : r.currentRoundStatus === "COUNTDOWN"
-                        ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
-                        : "bg-purple-500/15 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-500/30 dark:border-purple-800/40"
+                        ? "bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-500/30 animate-pulse"
+                        : "bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800/40"
                   }`}
                 >
-                  {r.currentRoundStatus === "WAITING" ? "⏳ WAITING" : r.currentRoundStatus}
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      r.currentRoundStatus === "RUNNING"
+                        ? "bg-emerald-500 animate-pulse"
+                        : r.currentRoundStatus === "COUNTDOWN"
+                          ? "bg-amber-500 animate-ping"
+                          : "bg-purple-500"
+                    }`}
+                  />
+                  <span>{r.currentRoundStatus || "WAITING"}</span>
                 </span>
               </div>
               <div className="text-[11px] text-slate-500 dark:text-gray-400">
