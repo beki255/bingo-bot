@@ -1451,37 +1451,102 @@ export function createAdminRouter() {
       const limit = Math.min(100, Math.max(10, Number(req.query.limit || 25)));
       const skip = (page - 1) * limit;
 
-      const where: Prisma.GameRoundWhereInput = {};
-      if (status === "LIVE") {
-        where.status = { in: ["WAITING", "COUNTDOWN", "RUNNING", "CLAIM_WINDOW"] };
-      } else if (
-        ["WAITING", "COUNTDOWN", "RUNNING", "CLAIM_WINDOW", "FINISHED", "CANCELLED_REFUNDED"].includes(
-          status
-        )
-      ) {
-        where.status = status as Prisma.GameRoundWhereInput["status"];
-      }
-      if (roomId) {
-        where.roomId = roomId;
-      }
-
-      const [total, rounds] = await Promise.all([
-        prisma.gameRound.count({ where }),
-        prisma.gameRound.findMany({
-          where,
-          orderBy: { createdAt: "desc" },
-          skip,
-          take: limit,
+      const roundInclude = {
+        room: { select: { nameAm: true, nameEn: true, stakeAmount: true, sortOrder: true } },
+        tickets: {
           include: {
-            room: { select: { nameAm: true, nameEn: true, stakeAmount: true } },
-            tickets: {
-              include: {
-                user: { select: { id: true, firstName: true, phoneNumber: true } },
-              },
-            },
+            user: { select: { id: true, firstName: true, phoneNumber: true } },
           },
-        }),
-      ]);
+        },
+      } satisfies Prisma.GameRoundInclude;
+
+      let total = 0;
+      let rounds: Prisma.GameRoundGetPayload<{ include: typeof roundInclude }>[] = [];
+
+      if (status === "ALL") {
+        const activeStatuses: Prisma.GameRoundWhereInput["status"] = {
+          in: ["WAITING", "COUNTDOWN", "RUNNING", "CLAIM_WINDOW"],
+        };
+        const finishedStatuses: Prisma.GameRoundWhereInput["status"] = {
+          in: ["FINISHED", "CANCELLED_REFUNDED"],
+        };
+        const activeWhere: Prisma.GameRoundWhereInput = {
+          status: activeStatuses,
+          ...(roomId ? { roomId } : {}),
+        };
+        const finishedWhere: Prisma.GameRoundWhereInput = {
+          status: finishedStatuses,
+          ...(roomId ? { roomId } : {}),
+        };
+
+        const [activeCount, finishedCount, activeRounds] = await Promise.all([
+          prisma.gameRound.count({ where: activeWhere }),
+          prisma.gameRound.count({ where: finishedWhere }),
+          page === 1
+            ? prisma.gameRound.findMany({
+                where: activeWhere,
+                orderBy: [{ room: { sortOrder: "asc" } }, { room: { stakeAmount: "asc" } }, { createdAt: "desc" }],
+                include: roundInclude,
+              })
+            : Promise.resolve([]),
+        ]);
+
+        total = activeCount + finishedCount;
+
+        if (page === 1) {
+          const remainingTake = Math.max(0, limit - activeRounds.length);
+          const finishedRounds =
+            remainingTake > 0
+              ? await prisma.gameRound.findMany({
+                  where: finishedWhere,
+                  orderBy: [{ endedAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
+                  skip: 0,
+                  take: remainingTake,
+                  include: roundInclude,
+                })
+              : [];
+          rounds = [...activeRounds, ...finishedRounds];
+        } else {
+          const finishedSkip = Math.max(0, skip - activeCount);
+          rounds = await prisma.gameRound.findMany({
+            where: finishedWhere,
+            orderBy: [{ endedAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
+            skip: finishedSkip,
+            take: limit,
+            include: roundInclude,
+          });
+        }
+      } else {
+        const where: Prisma.GameRoundWhereInput = {};
+        if (status === "LIVE") {
+          where.status = { in: ["WAITING", "COUNTDOWN", "RUNNING", "CLAIM_WINDOW"] };
+        } else if (
+          ["WAITING", "COUNTDOWN", "RUNNING", "CLAIM_WINDOW", "FINISHED", "CANCELLED_REFUNDED"].includes(
+            status
+          )
+        ) {
+          where.status = status as Prisma.GameRoundWhereInput["status"];
+        }
+        if (roomId) {
+          where.roomId = roomId;
+        }
+
+        const isLiveQuery = status === "LIVE" || status === "WAITING" || status === "COUNTDOWN" || status === "RUNNING";
+        const [cnt, list] = await Promise.all([
+          prisma.gameRound.count({ where }),
+          prisma.gameRound.findMany({
+            where,
+            orderBy: isLiveQuery
+              ? [{ room: { sortOrder: "asc" } }, { room: { stakeAmount: "asc" } }, { createdAt: "desc" }]
+              : [{ endedAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
+            skip,
+            take: limit,
+            include: roundInclude,
+          }),
+        ]);
+        total = cnt;
+        rounds = list;
+      }
 
       res.json({
         ok: true,

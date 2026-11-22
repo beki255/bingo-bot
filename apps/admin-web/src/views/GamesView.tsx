@@ -42,6 +42,25 @@ function ballLabel(n: number): string {
   return `O-${n}`;
 }
 
+function isActiveRoundStatus(status: string): boolean {
+  return status === "WAITING" || status === "COUNTDOWN" || status === "RUNNING" || status === "CLAIM_WINDOW";
+}
+
+function sortGamesList(list: AdminGameRow[]): AdminGameRow[] {
+  return [...list].sort((a, b) => {
+    const aActive = isActiveRoundStatus(a.status);
+    const bActive = isActiveRoundStatus(b.status);
+    if (aActive && !bActive) return -1;
+    if (!aActive && bActive) return 1;
+    if (aActive && bActive) {
+      return (a.stakeAmount || 0) - (b.stakeAmount || 0);
+    }
+    const aTime = new Date(a.endedAt || a.startedAt || a.createdAt).getTime();
+    const bTime = new Date(b.endedAt || b.startedAt || b.createdAt).getTime();
+    return bTime - aTime;
+  });
+}
+
 export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
   const [games, setGames] = useState<AdminGameRow[]>([]);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "LIVE" | "FINISHED" | "CANCELLED_REFUNDED">("ALL");
@@ -67,11 +86,13 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
           const dedupedFresh = freshGames.filter((item, index, self) =>
             index === self.findIndex((t) => t.id === item.id)
           );
-          return dedupedFresh.map((fg) => {
+          const merged = dedupedFresh.map((fg) => {
             const existing = prev.find((p) => p.id === fg.id);
             if (existing) {
               return {
                 ...fg,
+                startedAt: fg.startedAt ?? existing.startedAt,
+                endedAt: fg.endedAt ?? existing.endedAt,
                 countdown: fg.status === "COUNTDOWN" ? existing.countdown ?? fg.countdown : undefined,
                 currentBall: fg.status === "RUNNING" ? existing.currentBall ?? fg.currentBall : undefined,
                 recentCalls: existing.recentCalls ?? fg.recentCalls,
@@ -79,6 +100,7 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
             }
             return fg;
           });
+          return sortGamesList(merged);
         });
         setTotal(res.total || 0);
         setTotalPages(res.totalPages || 1);
@@ -137,6 +159,18 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
               ...g,
               id: state.roundId || g.id,
               status: state.status,
+              startedAt:
+                state.status === "RUNNING"
+                  ? state.startedAt || g.startedAt || new Date().toISOString()
+                  : state.status === "WAITING" || state.status === "COUNTDOWN"
+                  ? null
+                  : g.startedAt,
+              endedAt:
+                state.status === "FINISHED"
+                  ? state.endedAt || g.endedAt || new Date().toISOString()
+                  : state.status === "WAITING" || state.status === "COUNTDOWN" || state.status === "RUNNING"
+                  ? null
+                  : g.endedAt,
               ticketsCount,
               playersCount: state.playersCount ?? g.playersCount,
               calledCount: Array.isArray(state.calledNumbers) ? state.calledNumbers.length : g.calledCount,
@@ -161,7 +195,7 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
         if (!matched && page === 1 && state.status !== "FINISHED") {
           fetchGames(true);
         }
-        return deduped;
+        return sortGamesList(deduped);
       });
 
       // Update active inspect modal if open for this room/round
@@ -197,21 +231,24 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
         );
       } else if (event === "ball_called") {
         setGames((prev) =>
-          prev.map((g) => {
-            if (g.id === payload?.roundId || (g.roomId === roomId && g.status !== "FINISHED" && g.status !== "CANCELLED_REFUNDED")) {
-              const newCount = Array.isArray(payload?.calledNumbers)
-                ? payload.calledNumbers.length
-                : g.calledCount + 1;
-              return {
-                ...g,
-                status: "RUNNING",
-                calledCount: newCount,
-                currentBall: payload?.ball || g.currentBall,
-                recentCalls: payload?.recentCalls || g.recentCalls,
-              };
-            }
-            return g;
-          })
+          sortGamesList(
+            prev.map((g) => {
+              if (g.id === payload?.roundId || (g.roomId === roomId && g.status !== "FINISHED" && g.status !== "CANCELLED_REFUNDED")) {
+                const newCount = Array.isArray(payload?.calledNumbers)
+                  ? payload.calledNumbers.length
+                  : g.calledCount + 1;
+                return {
+                  ...g,
+                  status: "RUNNING",
+                  startedAt: g.startedAt || new Date().toISOString(),
+                  calledCount: newCount,
+                  currentBall: payload?.ball || g.currentBall,
+                  recentCalls: payload?.recentCalls || g.recentCalls,
+                };
+              }
+              return g;
+            })
+          )
         );
 
         if (detailRef.current && (detailRef.current.id === payload?.roundId || (detailRef.current.roomId === roomId && detailRef.current.status !== "FINISHED"))) {
@@ -259,36 +296,43 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
           });
         }
       } else if (event === "game_started") {
+        const nowIso = new Date().toISOString();
         setGames((prev) =>
-          prev.map((g) =>
-            (g.id === payload?.roundId || (g.roomId === roomId && g.status !== "FINISHED" && g.status !== "CANCELLED_REFUNDED"))
-              ? { ...g, status: "RUNNING", countdown: undefined }
-              : g
+          sortGamesList(
+            prev.map((g) =>
+              (g.id === payload?.roundId || (g.roomId === roomId && g.status !== "FINISHED" && g.status !== "CANCELLED_REFUNDED"))
+                ? { ...g, status: "RUNNING", startedAt: payload?.startedAt || g.startedAt || nowIso, countdown: undefined }
+                : g
+            )
           )
         );
         if (detailRef.current && (detailRef.current.id === payload?.roundId || (detailRef.current.roomId === roomId && detailRef.current.status !== "FINISHED"))) {
-          setDetail((d) => (d ? { ...d, status: "RUNNING" } : null));
+          setDetail((d) => (d ? { ...d, status: "RUNNING", startedAt: d.startedAt || nowIso } : null));
         }
       } else if (event === "game_won") {
+        const nowIso = new Date().toISOString();
         setGames((prev) =>
-          prev.map((g) => {
-            if (g.id === payload?.roundId || (g.roomId === roomId && g.status !== "FINISHED" && g.status !== "CANCELLED_REFUNDED")) {
-              const freshWinners = Array.isArray(payload?.winners)
-                ? payload.winners.map((w: any) => ({
-                    userId: "",
-                    userName: w.name,
-                    cartelaNumber: w.cardNo,
-                    prizeWon: payload.derash || 0,
-                  }))
-                : g.winners;
-              return {
-                ...g,
-                status: "FINISHED",
-                winners: freshWinners,
-              };
-            }
-            return g;
-          })
+          sortGamesList(
+            prev.map((g) => {
+              if (g.id === payload?.roundId || (g.roomId === roomId && g.status !== "FINISHED" && g.status !== "CANCELLED_REFUNDED")) {
+                const freshWinners = Array.isArray(payload?.winners)
+                  ? payload.winners.map((w: any) => ({
+                      userId: "",
+                      userName: w.name,
+                      cartelaNumber: w.cardNo,
+                      prizeWon: payload.derash || 0,
+                    }))
+                  : g.winners;
+                return {
+                  ...g,
+                  status: "FINISHED",
+                  endedAt: payload?.endedAt || nowIso,
+                  winners: freshWinners,
+                };
+              }
+              return g;
+            })
+          )
         );
 
         if (detailRef.current && (detailRef.current.id === payload?.roundId || (detailRef.current.roomId === roomId && detailRef.current.status !== "FINISHED"))) {
@@ -299,12 +343,19 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
                 ? { ...t, status: "WINNER", prizeWon: payload?.derash || 0 }
                 : t
             );
-            return { ...d, status: "FINISHED", tickets: updatedTickets };
+            return { ...d, status: "FINISHED", endedAt: nowIso, tickets: updatedTickets };
           });
         }
       } else if (event === "game_ended") {
+        const nowIso = new Date().toISOString();
         setGames((prev) =>
-          prev.map((g) => ((g.id === payload?.roundId || (g.roomId === roomId && g.status !== "FINISHED" && g.status !== "CANCELLED_REFUNDED")) ? { ...g, status: "FINISHED" } : g))
+          sortGamesList(
+            prev.map((g) =>
+              (g.id === payload?.roundId || (g.roomId === roomId && g.status !== "FINISHED" && g.status !== "CANCELLED_REFUNDED"))
+                ? { ...g, status: "FINISHED", endedAt: payload?.endedAt || g.endedAt || nowIso }
+                : g
+            )
+          )
         );
         setTimeout(() => fetchGames(true), 3000);
       }
@@ -439,8 +490,12 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
                         </div>
                         <div className="text-[11px] text-slate-400 dark:text-gray-500 flex items-center gap-1 mt-0.5">
                           <span className="font-mono text-slate-500 dark:text-gray-400 font-semibold">ID: TB{g.id.slice(-6).toUpperCase()}</span>
-                          <span>•</span>
-                          <span>{formatDateTime(g.createdAt)}</span>
+                          {!isWaiting && !isCountdown && (
+                            <>
+                              <span>•</span>
+                              <span>{formatDateTime(g.endedAt || g.startedAt || g.createdAt)}</span>
+                            </>
+                          )}
                         </div>
                       </td>
 
