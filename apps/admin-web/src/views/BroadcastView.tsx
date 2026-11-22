@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Megaphone, Send, Users, CheckCircle, ImagePlus, Video, Trash2, Gamepad2 } from "lucide-react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Megaphone, Send, Users, CheckCircle, ImagePlus, Video, Trash2, Gamepad2, ClipboardPaste } from "lucide-react";
 import { adminFetch } from "../api";
 
 export const BroadcastView: React.FC = () => {
@@ -14,6 +14,7 @@ export const BroadcastView: React.FC = () => {
   const [mediaDataUrl, setMediaDataUrl] = useState<string | null>(null);
   const [mediaFileName, setMediaFileName] = useState<string | null>(null);
   const [mediaSizeLabel, setMediaSizeLabel] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ total: number; sent: number; failed: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,14 +39,19 @@ export const BroadcastView: React.FC = () => {
     if (videoInputRef.current) videoInputRef.current.value = "";
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: "photo" | "video") => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const processMediaFile = useCallback((file: File, fallbackType?: "photo" | "video") => {
+    const isVideo = file.type.startsWith("video/") || fallbackType === "video";
+    const isImage = file.type.startsWith("image/") || fallbackType === "photo";
+    if (!isVideo && !isImage) {
+      setError("Unsupported file type. Please paste or select an image or video.");
+      return;
+    }
 
-    const maxBytes = type === "video" ? 30 * 1024 * 1024 : 10 * 1024 * 1024;
+    const detectedType: "photo" | "video" = isVideo ? "video" : "photo";
+    const maxBytes = detectedType === "video" ? 30 * 1024 * 1024 : 10 * 1024 * 1024;
     if (file.size > maxBytes) {
       setError(
-        type === "video"
+        detectedType === "video"
           ? "Video size must be under 30 MB."
           : "Photo size must be under 10 MB."
       );
@@ -56,17 +62,79 @@ export const BroadcastView: React.FC = () => {
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === "string") {
-        setMediaType(type);
+        setMediaType(detectedType);
         setMediaDataUrl(reader.result);
-        setMediaFileName(file.name);
+        const ext = file.type.split("/")[1] || (detectedType === "video" ? "mp4" : "png");
+        setMediaFileName(file.name && file.name !== "image.png" ? file.name : `pasted-${Date.now()}.${ext}`);
         const sizeMb = file.size / (1024 * 1024);
-        setMediaSizeLabel(sizeMb >= 1 ? `${sizeMb.toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`);
+        setMediaSizeLabel(sizeMb >= 1 ? `${sizeMb.toFixed(1)} MB` : `${Math.max(1, Math.round(file.size / 1024))} KB`);
       }
     };
     reader.onerror = () => {
       setError("Failed to read file.");
     };
     reader.readAsDataURL(file);
+  }, []);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: "photo" | "video") => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    processMediaFile(file, type);
+  };
+
+  // Global & local clipboard paste handler (Ctrl+V anywhere on the page or in the message box)
+  useEffect(() => {
+    const handleWindowPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.startsWith("image/") || item.type.startsWith("video/")) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            processMediaFile(file);
+            return;
+          }
+        }
+      }
+
+      const files = e.clipboardData?.files;
+      if (files && files.length > 0) {
+        const file = files[0];
+        if (file.type.startsWith("image/") || file.type.startsWith("video/")) {
+          e.preventDefault();
+          processMediaFile(file);
+        }
+      }
+    };
+
+    window.addEventListener("paste", handleWindowPaste);
+    return () => window.removeEventListener("paste", handleWindowPaste);
+  }, [processMediaFile]);
+
+  const handlePasteFromClipboardButton = async () => {
+    try {
+      if (!navigator.clipboard?.read) {
+        setError("Press Ctrl+V (or Cmd+V) directly on the page to paste your copied image.");
+        return;
+      }
+      const clipboardItems = await navigator.clipboard.read();
+      for (const item of clipboardItems) {
+        const imageType = item.types.find((t) => t.startsWith("image/"));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const ext = imageType.split("/")[1] || "png";
+          const file = new File([blob], `pasted-photo.${ext}`, { type: imageType });
+          processMediaFile(file, "photo");
+          return;
+        }
+      }
+      setError("No copied image found in clipboard. Copy an image first or press Ctrl+V.");
+    } catch {
+      setError("Press Ctrl+V (or Cmd+V) anywhere on this page to paste your copied image.");
+    }
   };
 
   const handleSend = async (e: React.FormEvent) => {
@@ -149,11 +217,28 @@ export const BroadcastView: React.FC = () => {
             </div>
           </div>
 
-          {/* Photo & Video Attachment Controls */}
-          <div>
-            <label className="text-xs font-bold text-slate-700 dark:text-gray-300 block mb-2">
-              Attach Photo or Video (Optional)
-            </label>
+          {/* Photo & Video Attachment Controls (File Upload + Copy/Paste Ctrl+V + Drag & Drop) */}
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragging(true);
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDragging(false);
+              const file = e.dataTransfer?.files?.[0];
+              if (file) processMediaFile(file);
+            }}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-bold text-slate-700 dark:text-gray-300">
+                Attach Photo or Video (Optional)
+              </label>
+              <span className="text-[11px] font-semibold text-blue-600 dark:text-cyan-400">
+                💡 Tip: You can also Copy &amp; Paste (Ctrl+V) any image directly!
+              </span>
+            </div>
 
             <input
               ref={photoInputRef}
@@ -171,23 +256,36 @@ export const BroadcastView: React.FC = () => {
             />
 
             {!mediaDataUrl ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div
+                className={`grid grid-cols-1 sm:grid-cols-3 gap-3 p-1 rounded-xl transition ${
+                  isDragging ? "ring-2 ring-blue-500 bg-blue-500/10" : ""
+                }`}
+              >
                 <button
                   type="button"
                   onClick={() => photoInputRef.current?.click()}
-                  className="flex items-center justify-center gap-2.5 p-4 rounded-xl border-2 border-dashed border-slate-300 dark:border-[#1e2742] hover:border-blue-500 dark:hover:border-blue-500 bg-slate-50/70 dark:bg-[#0a0e18] text-slate-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition text-xs font-bold"
+                  className="flex items-center justify-center gap-2 p-3.5 rounded-xl border-2 border-dashed border-slate-300 dark:border-[#1e2742] hover:border-blue-500 dark:hover:border-blue-500 bg-slate-50/70 dark:bg-[#0a0e18] text-slate-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition text-xs font-bold"
                 >
-                  <ImagePlus className="w-4 h-4 text-blue-500" />
-                  <span>Attach Photo (JPG, PNG, WebP)</span>
+                  <ImagePlus className="w-4 h-4 text-blue-500 shrink-0" />
+                  <span>Upload Photo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePasteFromClipboardButton}
+                  className="flex items-center justify-center gap-2 p-3.5 rounded-xl border-2 border-dashed border-emerald-400/60 dark:border-emerald-500/40 hover:border-emerald-500 bg-emerald-500/5 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 transition text-xs font-bold"
+                >
+                  <ClipboardPaste className="w-4 h-4 text-emerald-500 shrink-0" />
+                  <span>Paste Image (Ctrl+V)</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => videoInputRef.current?.click()}
-                  className="flex items-center justify-center gap-2.5 p-4 rounded-xl border-2 border-dashed border-slate-300 dark:border-[#1e2742] hover:border-purple-500 dark:hover:border-purple-500 bg-slate-50/70 dark:bg-[#0a0e18] text-slate-700 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400 transition text-xs font-bold"
+                  className="flex items-center justify-center gap-2 p-3.5 rounded-xl border-2 border-dashed border-slate-300 dark:border-[#1e2742] hover:border-purple-500 dark:hover:border-purple-500 bg-slate-50/70 dark:bg-[#0a0e18] text-slate-700 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400 transition text-xs font-bold"
                 >
-                  <Video className="w-4 h-4 text-purple-500" />
-                  <span>Attach Video (MP4, WebM)</span>
+                  <Video className="w-4 h-4 text-purple-500 shrink-0" />
+                  <span>Upload Video</span>
                 </button>
               </div>
             ) : (
