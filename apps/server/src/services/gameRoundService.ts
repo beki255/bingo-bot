@@ -61,7 +61,13 @@ export function checkCartelaWin(
 }
 
 export interface WinnerResult {
-  winners: Array<{ name: string; avatar: string; cardNo: number }>;
+  winners: Array<{
+    name: string;
+    avatar: string;
+    cardNo: number;
+    telegramId?: string;
+    userId?: string;
+  }>;
   winningCartelaNo: number;
   winningPatternKeys: string[];
   derash?: number;
@@ -198,7 +204,7 @@ export class GameRoundService {
             room: true,
             tickets: {
               include: {
-                user: { select: { id: true, firstName: true, username: true } },
+                user: { select: { id: true, firstName: true, username: true, telegramId: true } },
               },
             },
           },
@@ -854,9 +860,11 @@ export class GameRoundService {
 
     const winnersPayload: WinnerResult = {
       winners: winningTickets.map((w) => ({
-        name: w.ticket.user.username ? `@${w.ticket.user.username}` : w.ticket.user.firstName || "Player",
-        avatar: (w.ticket.user.firstName?.[0] || "P").toUpperCase(),
+        name: `Cartela #${w.ticket.cartelaNumber}`,
+        avatar: "🎯",
         cardNo: w.ticket.cartelaNumber,
+        telegramId: w.ticket.user?.telegramId ? String(w.ticket.user.telegramId) : undefined,
+        userId: w.ticket.userId,
       })),
       winningCartelaNo: winningTickets[0].ticket.cartelaNumber,
       winningPatternKeys: Array.from(winningTickets[0].keys),

@@ -8,6 +8,8 @@ interface WinnerInfo {
   name: string;
   avatar: string;
   cardNo: number;
+  telegramId?: string;
+  userId?: string;
 }
 
 interface WinnerData {
@@ -313,7 +315,17 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     s.on("game_won", (data: any) => {
       hasGameEndedRef.current = true;
       const winningCard = data?.winningCartelaNo;
-      const isUserWinner = cartelaNumbers.includes(winningCard);
+
+      const isUserWinner =
+        cartelaNumbers.includes(winningCard) ||
+        registeredCards.includes(winningCard) ||
+        (Array.isArray(data?.winners) &&
+          data.winners.some(
+            (w: any) =>
+              (w.telegramId && String(w.telegramId) === String(telegramId)) ||
+              registeredCards.includes(w.cardNo) ||
+              cartelaNumbers.includes(w.cardNo)
+          ));
 
       const delay = Number(data?.delaySeconds ?? winnerDelaySeconds ?? 6);
       setNextGameCountdown(delay);
@@ -326,7 +338,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       const wData: WinnerData = {
         winners: Array.isArray(data?.winners) && data.winners.length > 0
           ? data.winners
-          : [{ name: isUserWinner ? "You (ተጫዋች)" : `Player #${winningCard}`, avatar: isUserWinner ? "U" : "P", cardNo: winningCard }],
+          : [{ name: isUserWinner ? "You" : `ካርቴላ #${winningCard}`, avatar: isUserWinner ? "👑" : "🎯", cardNo: winningCard }],
         winningCartelaNo: winningCard,
         winningPatternKeys: new Set(data?.winningPatternKeys || []),
       };
@@ -488,8 +500,8 @@ export const LiveGame: React.FC<LiveGameProps> = ({
         const wData: WinnerData = {
           winners: [
             {
-              name: isUserCard ? "You (ተጫዋች)" : `Player #${cardNo}`,
-              avatar: isUserCard ? "U" : "P",
+              name: isUserCard ? "You" : `ካርቴላ #${cardNo}`,
+              avatar: isUserCard ? "👑" : "🎯",
               cardNo,
             },
           ],
@@ -537,7 +549,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
         onWinPrize(derash);
       }
       setWinnerData({
-        winners: [{ name: "You (ተጫዋች)", avatar: "U", cardNo: activeCartelaNo }],
+        winners: [{ name: "You", avatar: "👑", cardNo: activeCartelaNo }],
         winningCartelaNo: activeCartelaNo,
         winningPatternKeys: res.winningKeys,
       });
@@ -844,31 +856,72 @@ export const LiveGame: React.FC<LiveGameProps> = ({
             BINGO!
           </h1>
 
-          <div className="text-sm font-bold text-white mb-4 flex items-center gap-1.5">
-            <span>🎉</span>
-            <span>{winnerData.winners.length} {winnerData.winners.length > 1 ? "players" : "player"} won!</span>
-          </div>
+          {(() => {
+            const hasUserWon = winnerData.winners.some((w) => {
+              return (
+                (w.telegramId && String(w.telegramId) === String(telegramId)) ||
+                registeredCards.includes(w.cardNo) ||
+                cartelaNumbers.includes(w.cardNo) ||
+                w.name === "You" ||
+                w.name?.startsWith("You")
+              );
+            });
 
-          <div className="flex flex-wrap items-center justify-center gap-2 mb-4 max-w-xs">
-            {winnerData.winners.map((winner, idx) => (
-              <div
-                key={idx}
-                className="px-3 py-1.5 rounded-full bg-[#1e223d] border border-white/10 flex items-center gap-2 shadow-md"
-              >
-                <div className="w-5 h-5 rounded-full bg-[#3d456b] flex items-center justify-center font-bold text-[11px] text-white">
-                  {winner.avatar}
+            return (
+              <>
+                <div className="text-sm font-bold text-white mb-4 flex items-center gap-1.5">
+                  <span>🎉</span>
+                  <span>
+                    {hasUserWon
+                      ? "እርስዎ አሸንፈዋል! (You Won!)"
+                      : `${winnerData.winners.length} ${winnerData.winners.length > 1 ? "players" : "player"} won!`}
+                  </span>
                 </div>
-                <span className="text-xs font-bold text-white">{winner.name}</span>
-                <span className="text-xs font-semibold text-gray-400">#{winner.cardNo}</span>
-              </div>
-            ))}
-          </div>
+
+                <div className="flex flex-wrap items-center justify-center gap-2 mb-4 max-w-xs">
+                  {winnerData.winners.map((winner, idx) => {
+                    const isMe =
+                      (winner.telegramId && String(winner.telegramId) === String(telegramId)) ||
+                      registeredCards.includes(winner.cardNo) ||
+                      cartelaNumbers.includes(winner.cardNo) ||
+                      winner.name === "You" ||
+                      winner.name?.startsWith("You");
+
+                    return (
+                      <div
+                        key={idx}
+                        className={`px-3 py-1.5 rounded-full border flex items-center gap-2 shadow-md ${
+                          isMe
+                            ? "bg-amber-500/20 border-amber-500/50 text-amber-300 ring-1 ring-amber-500/30"
+                            : "bg-[#1e223d] border-white/10 text-white"
+                        }`}
+                      >
+                        <div
+                          className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[11px] ${
+                            isMe ? "bg-amber-500 text-black" : "bg-[#3d456b] text-white"
+                          }`}
+                        >
+                          {isMe ? "👑" : "🎯"}
+                        </div>
+                        <span className="text-xs font-bold">
+                          {isMe ? "You" : `ካርቴላ #${winner.cardNo}`}
+                        </span>
+                        {isMe && (
+                          <span className="text-xs font-semibold text-amber-400/80">#{winner.cardNo}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            );
+          })()}
 
           <div className="w-full max-w-[310px] bg-[#161834] border border-white/10 rounded-2xl p-3 shadow-2xl">
             <div className="flex items-center justify-between text-xs mb-2 px-1">
               <div className="flex items-center gap-1.5 text-amber-400 font-extrabold text-xs">
                 <Trophy className="w-4 h-4 text-amber-400" />
-                <span>Winning Cartela: #{winnerData.winningCartelaNo}</span>
+                <span>ካርቴላ #{winnerData.winningCartelaNo}</span>
               </div>
               <div className="text-emerald-400 font-black text-xs bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
                 +{derash} ETB
