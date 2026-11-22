@@ -119,7 +119,8 @@ export class GameRoundService {
       });
     }
 
-    // Automatically start countdown when total active/selected cards in the room meet minPlayers
+    // Automatically start countdown when total active/selected cards in the room meet minPlayers,
+    // or cancel/reset countdown if cards fall below minPlayers (e.g. player unselects cards)
     try {
       const round = await this.getOrCreateActiveRound(roomId);
       const totalSelected = this.getPendingSelections(roomId).length;
@@ -127,6 +128,8 @@ export class GameRoundService {
       const minRequired = round.room?.minPlayers || 2;
       if (totalActive >= minRequired && round.status === "WAITING") {
         await this.startCountdown(roomId, round.id);
+      } else if (totalActive < minRequired && round.status === "COUNTDOWN") {
+        await this.cancelCountdown(roomId, round.id);
       }
     } catch {}
   }
@@ -145,6 +148,16 @@ export class GameRoundService {
           pendingSelections: this.getPendingSelections(roomId),
         });
       }
+      try {
+        this.getOrCreateActiveRound(roomId).then(async (round) => {
+          const totalSelected = this.getPendingSelections(roomId).length;
+          const totalActive = (round.tickets?.length || 0) + totalSelected;
+          const minRequired = round.room?.minPlayers || 2;
+          if (totalActive < minRequired && round.status === "COUNTDOWN") {
+            await this.cancelCountdown(roomId, round.id);
+          }
+        }).catch(() => {});
+      } catch {}
     }
   }
 
@@ -594,12 +607,23 @@ export class GameRoundService {
     const timer = setInterval(async () => {
       const current = await prisma.gameRound.findUnique({
         where: { id: roundId },
-        include: { tickets: true },
+        include: { tickets: true, room: true },
       });
 
       if (!current || current.status !== "COUNTDOWN") {
         clearInterval(timer);
         this.countdownTimers.delete(roomId);
+        return;
+      }
+
+      // Check if total active cards still meet minPlayers threshold:
+      const totalSelected = this.getPendingSelections(roomId).length;
+      const totalActive = (current.tickets?.length || 0) + totalSelected;
+      const minRequired = current.room?.minPlayers || 2;
+      if (totalActive < minRequired) {
+        clearInterval(timer);
+        this.countdownTimers.delete(roomId);
+        await this.cancelCountdown(roomId, roundId);
         return;
       }
 
@@ -616,6 +640,38 @@ export class GameRoundService {
     }, 1000);
 
     this.countdownTimers.set(roomId, timer);
+  }
+
+  /**
+   * Cancels and stops an active countdown if cards fall below minPlayers (e.g. unselecting cards)
+   */
+  async cancelCountdown(roomId: string, roundId: string) {
+    const timer = this.countdownTimers.get(roomId);
+    if (timer) {
+      clearInterval(timer);
+      this.countdownTimers.delete(roomId);
+    }
+    const deferredTimer = this.deferredCountdownTimers.get(roomId);
+    if (deferredTimer) {
+      clearTimeout(deferredTimer);
+      this.deferredCountdownTimers.delete(roomId);
+    }
+
+    try {
+      await prisma.gameRound.update({
+        where: { id: roundId },
+        data: {
+          status: "WAITING",
+          countdownEndsAt: null,
+        },
+      });
+
+      this.emitEvent(roomId, "countdown_cancelled", { roomId });
+      const state = await this.getRoomState(roomId);
+      this.broadcastRoomState(roomId, state);
+    } catch (err) {
+      console.error("[GameRound] Error cancelling countdown:", err);
+    }
   }
 
   /**

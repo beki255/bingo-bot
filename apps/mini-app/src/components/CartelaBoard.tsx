@@ -118,6 +118,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
         }
       } else if (state?.status === "WAITING") {
         setIsCountdownRunning(false);
+        setCountdown(countdownSeconds);
       } else if (state?.status === "RUNNING") {
         // Game has started on the server! Transition immediately to LiveGame!
         if (onConfirmPlayRef.current) {
@@ -197,6 +198,11 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
       }
     });
 
+    s.on("countdown_cancelled", () => {
+      setIsCountdownRunning(false);
+      setCountdown(countdownSeconds);
+    });
+
     setSocket(s);
 
     // Fallback HTTP poll every 2.5s to ensure rock-solid state synchronization
@@ -222,6 +228,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
             }
           } else if (st.status === "WAITING") {
             setIsCountdownRunning(false);
+            setCountdown(countdownSeconds);
           } else if (st.status === "RUNNING") {
             if (onConfirmPlayRef.current) {
               const unpaidCards = selectedCardsRef.current.filter(
@@ -287,10 +294,14 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     return set.size;
   }, [registeredCards, selectedCards, otherPendingSelections]);
 
-  // When total active cards in the room reach minPlayers threshold, start countdown automatically ONLY if post-game delay has expired
+  // When total active cards in the room reach minPlayers threshold, start countdown automatically ONLY if post-game delay has expired.
+  // If active cards drop below minPlayers (e.g. user unselects cards), stop and reset countdown immediately!
   useEffect(() => {
     if (totalActiveRoomCards >= minPlayers && !isCountdownRunning && postGameDelayRemaining <= 0) {
       setIsCountdownRunning(true);
+      setCountdown(countdownSeconds);
+    } else if (totalActiveRoomCards < minPlayers && isCountdownRunning) {
+      setIsCountdownRunning(false);
       setCountdown(countdownSeconds);
     }
   }, [totalActiveRoomCards, minPlayers, isCountdownRunning, postGameDelayRemaining, countdownSeconds]);
@@ -319,6 +330,12 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
 
     const interval = setInterval(() => {
       setCountdown((prev) => {
+        if (totalActiveRoomCards < minPlayers) {
+          clearInterval(interval);
+          setIsCountdownRunning(false);
+          return countdownSeconds;
+        }
+
         if (prev <= 1) {
           clearInterval(interval);
           if (onConfirmPlayRef.current) {
