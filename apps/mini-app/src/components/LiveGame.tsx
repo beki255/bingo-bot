@@ -356,11 +356,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
         cartelaNumbers.length > 0 &&
         (cartelaNumbers.includes(winningCard) ||
           (Array.isArray(data?.winners) &&
-            data.winners.some(
-              (w: any) =>
-                (w.telegramId && telegramId && String(w.telegramId) === String(telegramId)) ||
-                cartelaNumbers.includes(w.cardNo)
-            )));
+            data.winners.some((w: any) => cartelaNumbers.includes(w.cardNo))));
 
       const delay = Number(data?.delaySeconds ?? winnerDelaySeconds ?? 6);
       setNextGameCountdown(delay);
@@ -895,12 +891,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
             const hasUserWon =
               cartelaNumbers.length > 0 &&
               (cartelaNumbers.includes(winnerData.winningCartelaNo) ||
-                winnerData.winners.some((w) => {
-                  return (
-                    (w.telegramId && telegramId && String(w.telegramId) === String(telegramId)) ||
-                    cartelaNumbers.includes(w.cardNo)
-                  );
-                }));
+                winnerData.winners.some((w) => cartelaNumbers.includes(w.cardNo)));
 
             return (
               <>
@@ -915,10 +906,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
 
                 <div className="flex flex-wrap items-center justify-center gap-2 mb-4 max-w-xs">
                   {winnerData.winners.map((winner, idx) => {
-                    const isMe =
-                      cartelaNumbers.length > 0 &&
-                      ((winner.telegramId && telegramId && String(winner.telegramId) === String(telegramId)) ||
-                        cartelaNumbers.includes(winner.cardNo));
+                    const isMe = cartelaNumbers.length > 0 && cartelaNumbers.includes(winner.cardNo);
 
                     return (
                       <div
