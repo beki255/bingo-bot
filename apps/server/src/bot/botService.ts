@@ -642,7 +642,7 @@ class BotService {
       getSystemSettings(),
       prisma.user.count({ where: { referredById: user.id } }),
     ]);
-    const botUser = env.botUsername || this.bot?.botInfo?.username || "tunnel_bingo_bot";
+    const botUser = (this.bot?.botInfo?.username || env.botUsername || "Zemen_Bingo_et_bot").replace(/^@/, "");
     const link = `https://t.me/${botUser}?start=${user.telegramId.toString()}`;
     const botName = escapeHtml(settings.botName);
     const targetCount = 10;

@@ -161,7 +161,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
                 className="w-full bg-[#0a0e18] border border-[#1e2742] focus:border-blue-500 focus:outline-none rounded-xl px-4 py-3 text-xl text-center tracking-[0.4em] font-black text-cyan-400 placeholder-gray-700 transition"
               />
               <p className="text-[11px] text-gray-400 mt-2.5 leading-relaxed">
-                Open <b>Zemen Bingo Bot</b>, send <code>/admin</code>, and tap{" "}
+                Open <b>@Zemen_Bingo_et_bot</b>, send <code>/admin</code>, and tap{" "}
                 <b>🔐 Web Login Code</b> to generate a 5-minute 6-digit login code.
               </p>
             </div>

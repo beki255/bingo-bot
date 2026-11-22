@@ -14,13 +14,31 @@ const computedAdminWebUrl =
       ? `${miniAppUrlRaw}/admin`
       : "http://localhost:5174/admin";
 
+const rawBotToken = (process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || "").trim();
+const resolvedBotToken =
+  !rawBotToken || rawBotToken.startsWith("8807985454:")
+    ? "9188941192:AAFdFhf6OMUl-yh11k396FYJ-Rl0tWF8xm0"
+    : rawBotToken;
+
+const rawBotUsername = (process.env.BOT_USERNAME || "").trim().replace(/^@/, "");
+const resolvedBotUsername =
+  !rawBotUsername || rawBotUsername.toLowerCase() === "tunnel_bingo_bot"
+    ? "Zemen_Bingo_et_bot"
+    : rawBotUsername;
+
+const rawBotName = (process.env.BOT_NAME || "").trim();
+const resolvedBotName =
+  !rawBotName || rawBotName.toLowerCase() === "tunnel bingo"
+    ? "Zemen Bingo"
+    : rawBotName;
+
 export const env = {
   port: Number(process.env.PORT || 3001),
   nodeEnv: process.env.NODE_ENV || "development",
   databaseUrl: process.env.DATABASE_URL || "",
-  botToken: (process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || "").trim(),
-  botUsername: (process.env.BOT_USERNAME || "").trim(),
-  botName: (process.env.BOT_NAME || "Zemen Bingo").trim(),
+  botToken: resolvedBotToken,
+  botUsername: resolvedBotUsername,
+  botName: resolvedBotName,
   welcomeBannerUrl: (
     process.env.WELCOME_BANNER_URL ||
     path.resolve(__dirname, "../../assets/welcome_banner.jpg")

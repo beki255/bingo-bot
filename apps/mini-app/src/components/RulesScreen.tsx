@@ -658,7 +658,7 @@ export const RulesScreen: React.FC<RulesScreenProps> = ({ onBack, initialLang = 
       {/* 8. Centered Bot Watermark */}
       <div className="mt-8 text-center">
         <span className="text-xs text-gray-500 font-medium tracking-wider">
-          Zemen Bingo
+          @Zemen_Bingo_et_bot
         </span>
       </div>
     </div>
