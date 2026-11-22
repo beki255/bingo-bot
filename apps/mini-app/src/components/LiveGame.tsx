@@ -259,8 +259,10 @@ export const LiveGame: React.FC<LiveGameProps> = ({
   // Voice announcement: "ጨዋታው ተጀምሯል" (aac_started.mp3) on game start
   useEffect(() => {
     if (!hasAnnouncedStartRef.current && calledNumbers.length <= 1) {
-      hasAnnouncedStartRef.current = true;
-      playGameStartedSound();
+      const t = setTimeout(() => {
+        playGameStartedSound();
+      }, 50);
+      return () => clearTimeout(t);
     }
   }, []);
 
@@ -292,6 +294,9 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       }
       if (typeof state?.ticketsCount === "number") {
         setServerPlayersCount(state.ticketsCount);
+      }
+      if (state?.status === "RUNNING" && (!Array.isArray(state?.calledNumbers) || state.calledNumbers.length <= 1)) {
+        playGameStartedSound();
       }
       if (state?.status === "WAITING" && !hasGameEndedRef.current && !winnerDataRef.current) {
         if (onNextRound) onNextRound();
