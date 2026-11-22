@@ -322,15 +322,14 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       const winningCard = data?.winningCartelaNo;
 
       const isUserWinner =
-        cartelaNumbers.includes(winningCard) ||
-        registeredCards.includes(winningCard) ||
-        (Array.isArray(data?.winners) &&
-          data.winners.some(
-            (w: any) =>
-              (w.telegramId && String(w.telegramId) === String(telegramId)) ||
-              registeredCards.includes(w.cardNo) ||
-              cartelaNumbers.includes(w.cardNo)
-          ));
+        cartelaNumbers.length > 0 &&
+        (cartelaNumbers.includes(winningCard) ||
+          (Array.isArray(data?.winners) &&
+            data.winners.some(
+              (w: any) =>
+                (w.telegramId && telegramId && String(w.telegramId) === String(telegramId)) ||
+                cartelaNumbers.includes(w.cardNo)
+            )));
 
       const delay = Number(data?.delaySeconds ?? winnerDelaySeconds ?? 6);
       setNextGameCountdown(delay);
@@ -862,15 +861,15 @@ export const LiveGame: React.FC<LiveGameProps> = ({
           </h1>
 
           {(() => {
-            const hasUserWon = winnerData.winners.some((w) => {
-              return (
-                (w.telegramId && String(w.telegramId) === String(telegramId)) ||
-                registeredCards.includes(w.cardNo) ||
-                cartelaNumbers.includes(w.cardNo) ||
-                w.name === "You" ||
-                w.name?.startsWith("You")
-              );
-            });
+            const hasUserWon =
+              cartelaNumbers.length > 0 &&
+              (cartelaNumbers.includes(winnerData.winningCartelaNo) ||
+                winnerData.winners.some((w) => {
+                  return (
+                    (w.telegramId && telegramId && String(w.telegramId) === String(telegramId)) ||
+                    cartelaNumbers.includes(w.cardNo)
+                  );
+                }));
 
             return (
               <>
@@ -879,18 +878,16 @@ export const LiveGame: React.FC<LiveGameProps> = ({
                   <span>
                     {hasUserWon
                       ? "እርስዎ አሸንፈዋል! (You Won!)"
-                      : `${winnerData.winners.length} ${winnerData.winners.length > 1 ? "players" : "player"} won!`}
+                      : "አሸናፊ ካርቴላ (Winner Cartela)"}
                   </span>
                 </div>
 
                 <div className="flex flex-wrap items-center justify-center gap-2 mb-4 max-w-xs">
                   {winnerData.winners.map((winner, idx) => {
                     const isMe =
-                      (winner.telegramId && String(winner.telegramId) === String(telegramId)) ||
-                      registeredCards.includes(winner.cardNo) ||
-                      cartelaNumbers.includes(winner.cardNo) ||
-                      winner.name === "You" ||
-                      winner.name?.startsWith("You");
+                      cartelaNumbers.length > 0 &&
+                      ((winner.telegramId && telegramId && String(winner.telegramId) === String(telegramId)) ||
+                        cartelaNumbers.includes(winner.cardNo));
 
                     return (
                       <div
@@ -928,8 +925,16 @@ export const LiveGame: React.FC<LiveGameProps> = ({
                 <Trophy className="w-4 h-4 text-amber-400" />
                 <span>ካርቴላ #{winnerData.winningCartelaNo}</span>
               </div>
-              <div className="text-emerald-400 font-black text-xs bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                +{derash} ETB
+              <div
+                className={`font-black text-xs px-2 py-0.5 rounded-full border ${
+                  cartelaNumbers.includes(winnerData.winningCartelaNo)
+                    ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                    : "text-amber-400 bg-amber-500/10 border-amber-500/20"
+                }`}
+              >
+                {cartelaNumbers.includes(winnerData.winningCartelaNo)
+                  ? `+${derash} ETB`
+                  : `ሽልማት: ${derash} ETB`}
               </div>
             </div>
 
