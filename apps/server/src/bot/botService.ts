@@ -154,6 +154,85 @@ class BotService {
     }
   }
 
+  getBroadcastPlayKeyboard(): InlineKeyboard {
+    const kb = new InlineKeyboard();
+    const playLabel = "🎮 ቢንጎ ተጫወት (Play)";
+    if (env.miniAppUrl.startsWith("https://")) {
+      kb.webApp(playLabel, env.miniAppUrl);
+    } else {
+      kb.text(playLabel, "menu:play");
+    }
+    return kb;
+  }
+
+  async sendBroadcastToRecipients(
+    recipientTelegramIds: Array<bigint | string>,
+    options: {
+      htmlText?: string;
+      mediaType?: "photo" | "video" | null;
+      mediaBuffer?: Buffer | null;
+      mediaUrl?: string | null;
+      mediaFileName?: string | null;
+    }
+  ): Promise<{ sent: number; failed: number }> {
+    if (!this.bot) return { sent: 0, failed: recipientTelegramIds.length };
+
+    const kb = this.getBroadcastPlayKeyboard();
+    const captionOrText = options.htmlText?.trim() || "";
+    const mediaType = options.mediaType || null;
+    let cachedTelegramFileId: string | null = null;
+
+    let sent = 0;
+    let failed = 0;
+
+    for (const tgId of recipientTelegramIds) {
+      const chatId = tgId.toString();
+      try {
+        if (mediaType === "photo") {
+          const source: string | InputFile = cachedTelegramFileId
+            ? cachedTelegramFileId
+            : options.mediaBuffer
+            ? new InputFile(options.mediaBuffer, options.mediaFileName || "broadcast.jpg")
+            : (options.mediaUrl || "");
+
+          const msg: any = await this.bot.api.sendPhoto(chatId, source, {
+            ...(captionOrText ? { caption: captionOrText.slice(0, 1024), parse_mode: "HTML" } : {}),
+            reply_markup: kb,
+          });
+          if (!cachedTelegramFileId && Array.isArray(msg?.photo) && msg.photo.length > 0) {
+            cachedTelegramFileId = msg.photo[msg.photo.length - 1].file_id;
+          }
+        } else if (mediaType === "video") {
+          const source: string | InputFile = cachedTelegramFileId
+            ? cachedTelegramFileId
+            : options.mediaBuffer
+            ? new InputFile(options.mediaBuffer, options.mediaFileName || "broadcast.mp4")
+            : (options.mediaUrl || "");
+
+          const msg: any = await this.bot.api.sendVideo(chatId, source, {
+            ...(captionOrText ? { caption: captionOrText.slice(0, 1024), parse_mode: "HTML" } : {}),
+            reply_markup: kb,
+          });
+          if (!cachedTelegramFileId && msg?.video?.file_id) {
+            cachedTelegramFileId = msg.video.file_id;
+          }
+        } else {
+          await this.bot.api.sendMessage(chatId, captionOrText, {
+            parse_mode: "HTML",
+            reply_markup: kb,
+          });
+        }
+        sent++;
+      } catch {
+        failed++;
+      }
+      // Respect Telegram rate limits (~20 msgs/sec max)
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    }
+
+    return { sent, failed };
+  }
+
   emitAdminEvent(event: string, payload: unknown) {
     this.io?.to("admins").emit(event, payload);
   }
@@ -1798,16 +1877,10 @@ class BotService {
         select: { telegramId: true },
       });
       await ctx.reply(`📣 Sending to ${targets.length} users...`);
-      let sent = 0;
-      for (const target of targets) {
-        try {
-          await bot.api.sendMessage(target.telegramId.toString(), `📢 ${text}`);
-          sent++;
-        } catch {
-          // blocked
-        }
-        await new Promise((r) => setTimeout(r, 40));
-      }
+      const { sent } = await this.sendBroadcastToRecipients(
+        targets.map((t) => t.telegramId),
+        { htmlText: escapeHtml(text) }
+      );
       await ctx.reply(`✅ Broadcast sent: ${sent}/${targets.length}`);
     });
 

@@ -1995,15 +1995,41 @@ export function createAdminRouter() {
 
   const broadcastSchema = z.object({
     target: z.enum(["ALL", "VERIFIED", "ACTIVE_7D"]).default("ALL"),
-    message: z.string().trim().min(2).max(3800),
+    message: z.string().trim().max(3800).optional().default(""),
+    mediaType: z.enum(["photo", "video"]).nullable().optional(),
+    mediaDataUrl: z.string().max(45_000_000).nullable().optional(),
+    mediaFileName: z.string().max(255).nullable().optional(),
   });
 
   router.post("/broadcast", requireSuperAdmin, async (req, res) => {
     try {
       const parsed = broadcastSchema.safeParse(req.body);
       if (!parsed.success) {
-        res.status(400).json({ ok: false, error: "Broadcast message must be 2-3800 characters." });
+        res.status(400).json({ ok: false, error: "Invalid broadcast payload." });
         return;
+      }
+
+      const rawMessage = parsed.data.message.trim();
+      const mediaType = parsed.data.mediaType || null;
+      const mediaDataUrl = parsed.data.mediaDataUrl?.trim() || null;
+
+      if (!rawMessage && !mediaDataUrl) {
+        res.status(400).json({ ok: false, error: "Please enter a message or attach a photo/video." });
+        return;
+      }
+
+      let mediaBuffer: Buffer | null = null;
+      let mediaUrl: string | null = null;
+
+      if (mediaDataUrl && mediaType) {
+        if (mediaDataUrl.startsWith("data:")) {
+          const commaIdx = mediaDataUrl.indexOf(",");
+          if (commaIdx !== -1) {
+            mediaBuffer = Buffer.from(mediaDataUrl.slice(commaIdx + 1), "base64");
+          }
+        } else if (mediaDataUrl.startsWith("http://") || mediaDataUrl.startsWith("https://")) {
+          mediaUrl = mediaDataUrl;
+        }
       }
 
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -2019,17 +2045,17 @@ export function createAdminRouter() {
         select: { telegramId: true },
       });
 
-      const formatted = `📢 <b>ማስታወቂያ (Announcement)</b>\n\n${escapeHtml(parsed.data.message)}`;
-      let sent = 0;
-      let failed = 0;
-
-      for (const r of recipients) {
-        const result = await botService.sendDirectMessage(r.telegramId, formatted);
-        if (result.ok) sent++;
-        else failed++;
-        // Respect Telegram rate limits (~20 msgs/sec max)
-        await new Promise((resolve) => setTimeout(resolve, 60));
-      }
+      const formatted = rawMessage ? escapeHtml(rawMessage) : "";
+      const { sent, failed } = await botService.sendBroadcastToRecipients(
+        recipients.map((r) => r.telegramId),
+        {
+          htmlText: formatted,
+          mediaType,
+          mediaBuffer,
+          mediaUrl,
+          mediaFileName: parsed.data.mediaFileName || (mediaType === "video" ? "video.mp4" : "photo.jpg"),
+        }
+      );
 
       await recordAuditLog(prisma, {
         actorId: req.admin!.id,
@@ -2037,7 +2063,14 @@ export function createAdminRouter() {
         action: "TELEGRAM_BROADCAST",
         targetType: "Broadcast",
         targetId: parsed.data.target,
-        after: { target: parsed.data.target, total: recipients.length, sent, failed, preview: parsed.data.message.slice(0, 200) },
+        after: {
+          target: parsed.data.target,
+          mediaType: mediaType || "text",
+          total: recipients.length,
+          sent,
+          failed,
+          preview: rawMessage.slice(0, 200),
+        },
       });
 
       res.json({ ok: true, total: recipients.length, sent, failed });

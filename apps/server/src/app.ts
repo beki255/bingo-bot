@@ -30,7 +30,7 @@ export function createApp() {
       credentials: true,
     })
   );
-  app.use(express.json({ limit: "2mb" }));
+  app.use(express.json({ limit: "50mb" }));
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
