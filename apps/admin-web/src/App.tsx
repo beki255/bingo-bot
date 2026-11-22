@@ -52,7 +52,7 @@ const TAB_META: Record<AdminTab, { title: string; subtitle: string }> = {
   },
   broadcast: {
     title: "Telegram Broadcast Center",
-    subtitle: "Send mass announcements directly to players via @tunnel_bingo_bot",
+    subtitle: "Send mass announcements directly to players via Zemen Bingo Bot",
   },
   settings: {
     title: "System Settings & Admin Auth",

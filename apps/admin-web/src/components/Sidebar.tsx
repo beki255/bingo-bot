@@ -100,10 +100,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="px-5 py-5 border-b border-slate-200 dark:border-[#1a233b] flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center font-black text-lg text-white shadow-lg shadow-blue-600/30">
-            TB
+            ZB
           </div>
           <div>
-            <h1 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">Tunnel Bingo</h1>
+            <h1 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">Zemen Bingo</h1>
             <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-cyan-400">
               Admin Console
             </span>

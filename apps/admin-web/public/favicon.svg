@@ -13,8 +13,8 @@
   <!-- Background Badge -->
   <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#tbGrad)" />
   <rect x="3" y="3" width="58" height="58" rx="15" fill="none" stroke="#ffffff" stroke-opacity="0.25" stroke-width="2" />
-  <!-- Monogram TB -->
-  <text x="31" y="42" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="28" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="-1">TB</text>
+  <!-- Monogram ZB -->
+  <text x="31" y="42" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="28" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="-1">ZB</text>
   <!-- Accent Bingo Pin / Gold Ball -->
   <circle cx="50" cy="14" r="6" fill="url(#goldGrad)" stroke="#ffffff" stroke-width="1.5" />
   <circle cx="48" cy="12" r="2" fill="#ffffff" fill-opacity="0.8" />

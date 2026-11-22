@@ -321,14 +321,14 @@ export default function App() {
           {activeTab === "game" && !isRulesOpen && (
             <header className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/5 bg-[#0e1022]/60 backdrop-blur-md sticky top-0 z-30">
               <div className="flex items-center gap-3">
-                {/* Tunnel Bingo Logo */}
+                {/* Zemen Bingo Logo */}
                 <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-cyan-500 via-purple-600 to-amber-400 p-[2px] shadow-lg shadow-purple-500/20">
                   <div className="w-full h-full rounded-full bg-[#14122d] flex items-center justify-center font-black text-amber-400 text-lg">
-                    T
+                    Z
                   </div>
                 </div>
                 <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-white via-gray-100 to-gray-300 bg-clip-text text-transparent">
-                  Tunnel Bingo
+                  Zemen Bingo
                 </span>
               </div>
 
@@ -362,7 +362,7 @@ export default function App() {
                   <h1 className="text-3xl font-extrabold tracking-tight">
                     Welcome to{" "}
                     <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-yellow-500 bg-clip-text text-transparent drop-shadow-[0_2px_15px_rgba(255,215,0,0.4)]">
-                      Tunnel Bingo
+                      Zemen Bingo
                     </span>
                   </h1>
                 </div>

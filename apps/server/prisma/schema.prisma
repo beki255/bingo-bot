@@ -222,7 +222,7 @@ model WithdrawRequest {
 
 model SystemSettings {
   id                   Int                 @id @default(1)
-  botName              String              @default("Bingo")
+  botName              String              @default("Zemen Bingo")
   welcomeBannerUrl     String              @default("")
   supportUsername      String              @default("")
   channelUrl           String              @default("")

@@ -77,7 +77,7 @@ async function main() {
       await prisma.systemSettings.create({
         data: {
           id: 1,
-          botName: env.botName || "Tunnel Bingo",
+          botName: env.botName || "Zemen Bingo",
           welcomeBannerUrl: env.welcomeBannerUrl || "",
           supportUsername: env.supportUsername || "@tunnel_tech_solution",
           instructionAm: defaultInstructionAm,
@@ -99,19 +99,29 @@ async function main() {
         });
       }
       console.log("Database initialized successfully!");
-    } else if (
-      !existingSettings.instructionAm ||
-      existingSettings.instructionAm.includes("1. ከ1 እስከ 600 ካሉት ቁጥሮች ይምረጡ።")
-    ) {
-      // Upgrade old 2-line placeholder instruction in DB to full detailed game instructions
-      await prisma.systemSettings.update({
-        where: { id: 1 },
-        data: {
-          instructionAm: defaultInstructionAm,
-          instructionEn: defaultInstructionEn,
-        },
-      });
-      console.log("Upgraded system instruction text to full detailed instructions.");
+    } else {
+      const updates: Record<string, string> = {};
+      if (
+        !existingSettings.instructionAm ||
+        existingSettings.instructionAm.includes("1. ከ1 እስከ 600 ካሉት ቁጥሮች ይምረጡ።")
+      ) {
+        updates.instructionAm = defaultInstructionAm;
+        updates.instructionEn = defaultInstructionEn;
+      }
+      if (
+        !existingSettings.botName ||
+        existingSettings.botName.toLowerCase() === "tunnel bingo" ||
+        existingSettings.botName.toLowerCase() === "bingo"
+      ) {
+        updates.botName = "Zemen Bingo";
+      }
+      if (Object.keys(updates).length > 0) {
+        await prisma.systemSettings.update({
+          where: { id: 1 },
+          data: updates,
+        });
+        console.log("Synced SystemSettings (Zemen Bingo branding & full instructions).");
+      }
     }
 
     // Always ensure SUPER_ADMIN user exists for the configured admin Telegram ID

@@ -204,7 +204,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ userBalance, onRefresh }
       {/* 4. Centered Bot Watermark */}
       <div className="mt-8 text-center">
         <span className="text-xs text-gray-500 font-medium tracking-wider">
-          @tunnel_bingo_bot
+          Zemen Bingo
         </span>
       </div>
     </div>

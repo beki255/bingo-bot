@@ -70,7 +70,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ refreshSigna
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `tunnel-bingo-ledger-p${page}.csv`;
+    a.download = `zemen-bingo-ledger-p${page}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

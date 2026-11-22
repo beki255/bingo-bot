@@ -56,9 +56,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
       <div className="w-full max-w-md bg-[#0f1422] border border-[#1e2742] rounded-3xl p-8 shadow-2xl relative z-10">
         <div className="flex flex-col items-center text-center mb-7">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center font-black text-2xl text-white shadow-xl shadow-blue-500/30 mb-4">
-            TB
+            ZB
           </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">Tunnel Bingo</h1>
+          <h1 className="text-2xl font-black text-white tracking-tight">Zemen Bingo</h1>
           <p className="text-xs text-gray-400 font-medium mt-1">
             Admin Management &amp; Operations Portal
           </p>
@@ -161,7 +161,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
                 className="w-full bg-[#0a0e18] border border-[#1e2742] focus:border-blue-500 focus:outline-none rounded-xl px-4 py-3 text-xl text-center tracking-[0.4em] font-black text-cyan-400 placeholder-gray-700 transition"
               />
               <p className="text-[11px] text-gray-400 mt-2.5 leading-relaxed">
-                Open <b>@tunnel_bingo_bot</b>, send <code>/admin</code>, and tap{" "}
+                Open <b>Zemen Bingo Bot</b>, send <code>/admin</code>, and tap{" "}
                 <b>🔐 Web Login Code</b> to generate a 5-minute 6-digit login code.
               </p>
             </div>

@@ -276,7 +276,7 @@ export function createApp() {
             totalGames: 0,
             totalInvites: 0,
             totalEarnings: 0,
-            referralCode: "TUNNEL",
+            referralCode: "ZEMEN",
           },
         });
       }

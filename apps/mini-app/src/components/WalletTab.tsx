@@ -263,7 +263,7 @@ export const WalletTab: React.FC<WalletTabProps> = ({
       {/* 6. Centered Bot Watermark / Handle */}
       <div className="mt-8 text-center">
         <span className="text-xs text-gray-500 font-medium tracking-wider">
-          @tunnel_bingo_bot
+          Zemen Bingo
         </span>
       </div>
     </div>

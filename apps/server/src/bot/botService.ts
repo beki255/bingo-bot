@@ -476,10 +476,15 @@ class BotService {
         : `\n🎁 Register now and get <b>${settings.welcomeBonusAmount.toString()} ETB</b> welcome bonus in your Wallet!`
       : "";
 
+    const displayBotName =
+      !settings.botName || settings.botName.toLowerCase() === "tunnel bingo"
+        ? "Zemen Bingo"
+        : settings.botName;
+
     const msg =
       lang === "AM"
-        ? `⚠️ ወደ <b>${escapeHtml(settings.botName)}</b> እንኳን በደህና መጡ!\n\nከመጠቀምዎ በፊት መጀመሪያ ከታች ያለውን <b>📞 ስልክ ቁጥር አጋራ</b> ቁልፍ ተጭነው መመዝገብ አለብዎት።${bonusNote}`
-        : `⚠️ Welcome to <b>${escapeHtml(settings.botName)}</b>!\n\nPlease <b>Register</b> first by tapping the <b>📞 Share contact</b> button below before using any option.${bonusNote}`;
+        ? `⚠️ ወደ <b>${escapeHtml(displayBotName)}</b> እንኳን በደህና መጡ!\n\nከመጠቀምዎ በፊት መጀመሪያ ከታች ያለውን <b>📞 ስልክ ቁጥር አጋራ</b> ቁልፍ ተጭነው መመዝገብ አለብዎት።${bonusNote}`
+        : `⚠️ Welcome to <b>${escapeHtml(displayBotName)}</b>!\n\nPlease <b>Register</b> first by tapping the <b>📞 Share contact</b> button below before using any option.${bonusNote}`;
 
     await ctx.reply(msg, {
       parse_mode: "HTML",
@@ -493,13 +498,18 @@ class BotService {
     lang: Language
   ) {
     const settings = await getSystemSettings();
-    const customCaption =
+    const displayBotName =
+      !settings.botName || settings.botName.toLowerCase() === "tunnel bingo"
+        ? "Zemen Bingo"
+        : settings.botName;
+    const rawCustomCaption =
       lang === "AM" ? settings.welcomeCaptionAm.trim() : settings.welcomeCaptionEn.trim();
+    const customCaption = rawCustomCaption.replace(/Tunnel Bingo/gi, "Zemen Bingo");
     const caption =
       customCaption ||
       (lang === "AM"
-        ? `👋 እንኳን ወደ ${settings.botName} በደህና መጡ! ከታች ያሉትን አማራጮች ይምረጡ።`
-        : `👋 Welcome to ${settings.botName}! Choose an Option below.`);
+        ? `👋 እንኳን ወደ ${displayBotName} በደህና መጡ! ከታች ያሉትን አማራጮች ይምረጡ።`
+        : `👋 Welcome to ${displayBotName}! Choose an Option below.`);
 
     const kb = this.mainInlineKeyboard(lang);
     await this.sendBannerOrText(sendPhoto, sendText, caption, kb);
@@ -1569,12 +1579,12 @@ class BotService {
 
     // 2. Auto-restore bot name, descriptions, and commands in background without blocking
     void Promise.allSettled([
-      bot.api.setMyName(env.botName || "Tunnel Bingo"),
+      bot.api.setMyName(env.botName || "Zemen Bingo"),
       bot.api.setMyDescription(
-        "🎉 ወደ Tunnel Bingo እንኳን በደህና መጡ!\n\nትክክለኛውን የ75-ኳስ ቢንጎ በቀጥታ ከጓደኞችዎ ጋር ይጫወቱ፣ በቴሌብር ፈጣን ክፍያ ገንዘብ ያስገቡ እና ያወጡ።\n\nለመጀመር /start ይበሉ ወይም Play Bingo ይጫኑ!"
+        "🎉 ወደ Zemen Bingo እንኳን በደህና መጡ!\n\nትክክለኛውን የ75-ኳስ ቢንጎ በቀጥታ ከጓደኞችዎ ጋር ይጫወቱ፣ በቴሌብር ፈጣን ክፍያ ገንዘብ ያስገቡ እና ያወጡ።\n\nለመጀመር /start ይበሉ ወይም Play Bingo ይጫኑ!"
       ),
       bot.api.setMyShortDescription(
-        "Tunnel Bingo - የቀጥታ 75-ኳስ ቢንጎ ጨዋታ። በቴሌብር ፈጣን ክፍያ።"
+        "Zemen Bingo - የቀጥታ 75-ኳስ ቢንጎ ጨዋታ። በቴሌብር ፈጣን ክፍያ።"
       ),
       bot.api.setMyCommands([
         { command: "play", description: "🎮 Play Bingo / ቢንጎ ተጫወት" },

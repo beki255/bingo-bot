@@ -85,7 +85,7 @@ async function main() {
     },
     create: {
       id: 1,
-      botName: process.env.BOT_NAME || "Tunnel Bingo",
+      botName: process.env.BOT_NAME || "Zemen Bingo",
       welcomeBannerUrl: process.env.WELCOME_BANNER_URL || "",
       supportUsername,
       channelUrl: "",

@@ -20,7 +20,7 @@ export const env = {
   databaseUrl: process.env.DATABASE_URL || "",
   botToken: (process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || "").trim(),
   botUsername: (process.env.BOT_USERNAME || "").trim(),
-  botName: (process.env.BOT_NAME || "Tunnel Bingo").trim(),
+  botName: (process.env.BOT_NAME || "Zemen Bingo").trim(),
   welcomeBannerUrl: (
     process.env.WELCOME_BANNER_URL ||
     path.resolve(__dirname, "../../assets/welcome_banner.jpg")
