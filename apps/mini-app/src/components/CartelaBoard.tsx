@@ -35,13 +35,15 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
   onConfirmPlay,
 }) => {
   const [selectedCards, setSelectedCards] = useState<number[]>([]);
-  const [lockedUserCards, setLockedUserCards] = useState<number[]>([]);
   const [registeredCards, setRegisteredCards] = useState<number[]>([]);
   const [otherPendingSelections, setOtherPendingSelections] = useState<number[]>([]);
   const [socket, setSocket] = useState<Socket | null>(null);
 
-  // Active playing cards (locked or currently selected)
-  const activeUserCards = lockedUserCards.length > 0 ? lockedUserCards : selectedCards;
+  const hasUserInteractedRef = useRef(false);
+  const hasTransitionedRef = useRef(false);
+
+  // Active playing cards currently selected by the user
+  const activeUserCards = selectedCards;
   const isUserPlaying = activeUserCards.length > 0;
 
   // Countdown starts when at least minPlayers cards are registered
@@ -70,27 +72,77 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     }, 3500);
   };
 
-  // Taken cards are cards registered by other players (excluding user's pending selections)
+  // Taken cards are cards registered by other players (excluding user's own selected cards)
   const takenCardsSet = useMemo(() => {
     const set = new Set<number>();
     registeredCards.forEach((c) => {
-      if (!lockedUserCards.includes(c)) {
+      if (!selectedCards.includes(c)) {
         set.add(c);
       }
     });
     return set;
-  }, [registeredCards, lockedUserCards]);
+  }, [registeredCards, selectedCards]);
 
   // Cards currently being selected/clicked by other players in real-time
   const otherPendingSet = useMemo(() => {
     const set = new Set<number>();
     otherPendingSelections.forEach((c) => {
-      if (!selectedCards.includes(c) && !lockedUserCards.includes(c)) {
+      if (!selectedCards.includes(c)) {
         set.add(c);
       }
     });
     return set;
-  }, [otherPendingSelections, selectedCards, lockedUserCards]);
+  }, [otherPendingSelections, selectedCards]);
+
+  const syncCardSelectionToServer = (cards: number[], activeSocket?: Socket | null) => {
+    if (!roomId || !clientId) return;
+    const sock = activeSocket ?? socket;
+    if (sock?.connected) {
+      sock.emit("select_cards", { roomId, clientId, cards });
+    }
+    fetch(`${API_BASE_URL}/api/rooms/${roomId}/select`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId, cards }),
+    }).catch(() => {});
+  };
+
+  const transitionToLiveGame = (state?: any) => {
+    if (hasTransitionedRef.current) return;
+    hasTransitionedRef.current = true;
+
+    const tgKey = String(telegramId || clientId || "");
+    const serverOwnedCards: number[] =
+      (tgKey && state?.ticketsByTelegramId?.[tgKey]) ||
+      (tgKey && state?.selectionsByClient?.[tgKey]) ||
+      [];
+
+    const userPlayingCards = Array.from(
+      new Set([...serverOwnedCards, ...selectedCardsRef.current])
+    );
+
+    // Ensure tickets are purchased on server if user had cards selected
+    if (userPlayingCards.length > 0 && roomId && telegramId) {
+      fetch(`${API_BASE_URL}/api/rooms/${roomId}/buy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telegramId, cartelaNumbers: userPlayingCards }),
+      }).catch(() => {});
+    }
+
+    const allRoundCards = Array.from(
+      new Set([
+        ...(Array.isArray(state?.takenCards) ? state.takenCards : []),
+        ...registeredCardsRef.current,
+        ...userPlayingCards,
+        ...otherPendingSelectionsRef.current,
+      ])
+    );
+
+    if (onConfirmPlayRef.current) {
+      onConfirmPlayRef.current(userPlayingCards, allRoundCards);
+    }
+  };
 
   // Real-time WebSocket connection for instant multiplayer card selection & room state
   useEffect(() => {
@@ -101,8 +153,28 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
       reconnectionAttempts: 10,
     });
 
+    const restoreUserSelectionsFromState = (st: any) => {
+      if (hasUserInteractedRef.current) return;
+      const tgKey = String(telegramId || clientId || "");
+      if (!tgKey) return;
+      const savedPending = st?.selectionsByClient?.[tgKey];
+      const savedTickets = st?.ticketsByTelegramId?.[tgKey];
+      const restored = Array.isArray(savedPending) && savedPending.length > 0
+        ? savedPending
+        : Array.isArray(savedTickets) && savedTickets.length > 0
+        ? savedTickets
+        : null;
+      if (restored && restored.length > 0) {
+        setSelectedCards(restored);
+        selectedCardsRef.current = restored;
+      }
+    };
+
     s.on("connect", () => {
       s.emit("join_room", { roomId, clientId });
+      if (hasUserInteractedRef.current && selectedCardsRef.current.length > 0) {
+        s.emit("select_cards", { roomId, clientId, cards: selectedCardsRef.current });
+      }
     });
 
     s.on("room_state", (state: any) => {
@@ -115,6 +187,8 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
       if (Array.isArray(state?.pendingSelections)) {
         setOtherPendingSelections(state.pendingSelections);
       }
+      restoreUserSelectionsFromState(state);
+
       if (state?.status === "COUNTDOWN") {
         setIsCountdownRunning(true);
         if (typeof state.countdown === "number" && state.countdown > 0) {
@@ -124,69 +198,12 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
         setIsCountdownRunning(false);
         setCountdown(countdownSeconds);
       } else if (state?.status === "RUNNING") {
-        // Game has started on the server! Transition immediately to LiveGame!
-        if (onConfirmPlayRef.current) {
-          const unpaidCards = selectedCardsRef.current.filter(
-            (c) => !lockedUserCardsRef.current.includes(c)
-          );
-          if (unpaidCards.length > 0) {
-            const unpaidCost = unpaidCards.length * stake;
-            if (onDeductBalanceRef.current) onDeductBalanceRef.current(unpaidCost);
-            if (roomId && telegramId) {
-              fetch(`${API_BASE_URL}/api/rooms/${roomId}/buy`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ telegramId, cartelaNumbers: unpaidCards }),
-              }).catch(() => {});
-            }
-            setLockedUserCards((p) => [...p, ...unpaidCards]);
-            lockedUserCardsRef.current = [...lockedUserCardsRef.current, ...unpaidCards];
-          }
-          const userPlayingCards = Array.from(
-            new Set([...lockedUserCardsRef.current, ...selectedCardsRef.current])
-          );
-          const allRoundCards = Array.from(
-            new Set([
-              ...registeredCardsRef.current,
-              ...selectedCardsRef.current,
-              ...otherPendingSelectionsRef.current,
-            ])
-          );
-          onConfirmPlayRef.current(userPlayingCards, allRoundCards);
-        }
+        transitionToLiveGame(state);
       }
     });
 
-    s.on("game_started", () => {
-      if (onConfirmPlayRef.current) {
-        const unpaidCards = selectedCardsRef.current.filter(
-          (c) => !lockedUserCardsRef.current.includes(c)
-        );
-        if (unpaidCards.length > 0) {
-          const unpaidCost = unpaidCards.length * stake;
-          if (onDeductBalanceRef.current) onDeductBalanceRef.current(unpaidCost);
-          if (roomId && telegramId) {
-            fetch(`${API_BASE_URL}/api/rooms/${roomId}/buy`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ telegramId, cartelaNumbers: unpaidCards }),
-            }).catch(() => {});
-          }
-          setLockedUserCards((p) => [...p, ...unpaidCards]);
-          lockedUserCardsRef.current = [...lockedUserCardsRef.current, ...unpaidCards];
-        }
-        const userPlayingCards = Array.from(
-          new Set([...lockedUserCardsRef.current, ...selectedCardsRef.current])
-        );
-        const allRoundCards = Array.from(
-          new Set([
-            ...registeredCardsRef.current,
-            ...selectedCardsRef.current,
-            ...otherPendingSelectionsRef.current,
-          ])
-        );
-        onConfirmPlayRef.current(userPlayingCards, allRoundCards);
-      }
+    s.on("game_started", (state: any) => {
+      transitionToLiveGame(state);
     });
 
     s.on("room_selections", (data: any) => {
@@ -225,6 +242,8 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
           if (Array.isArray(st.pendingSelections)) {
             setOtherPendingSelections(st.pendingSelections);
           }
+          restoreUserSelectionsFromState(st);
+
           if (st.status === "COUNTDOWN") {
             setIsCountdownRunning(true);
             if (typeof st.countdown === "number" && st.countdown > 0) {
@@ -234,35 +253,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
             setIsCountdownRunning(false);
             setCountdown(countdownSeconds);
           } else if (st.status === "RUNNING") {
-            if (onConfirmPlayRef.current) {
-              const unpaidCards = selectedCardsRef.current.filter(
-                (c) => !lockedUserCardsRef.current.includes(c)
-              );
-              if (unpaidCards.length > 0) {
-                const unpaidCost = unpaidCards.length * stake;
-                if (onDeductBalanceRef.current) onDeductBalanceRef.current(unpaidCost);
-                if (roomId && telegramId) {
-                  fetch(`${API_BASE_URL}/api/rooms/${roomId}/buy`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ telegramId, cartelaNumbers: unpaidCards }),
-                  }).catch(() => {});
-                }
-                setLockedUserCards((p) => [...p, ...unpaidCards]);
-                lockedUserCardsRef.current = [...lockedUserCardsRef.current, ...unpaidCards];
-              }
-              const userPlayingCards = Array.from(
-                new Set([...lockedUserCardsRef.current, ...selectedCardsRef.current])
-              );
-              const allRoundCards = Array.from(
-                new Set([
-                  ...registeredCardsRef.current,
-                  ...selectedCardsRef.current,
-                  ...otherPendingSelectionsRef.current,
-                ])
-              );
-              onConfirmPlayRef.current(userPlayingCards, allRoundCards);
-            }
+            transitionToLiveGame(st);
           }
         }
       } catch {}
@@ -273,21 +264,6 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
       s.disconnect();
     };
   }, [roomId, clientId]);
-
-  // Broadcast current user's card selections immediately to other players in the room
-  useEffect(() => {
-    if (!roomId || !clientId) return;
-
-    if (socket?.connected) {
-      socket.emit("select_cards", { roomId, clientId, cards: selectedCards });
-    }
-
-    fetch(`${API_BASE_URL}/api/rooms/${roomId}/select`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientId, cards: selectedCards }),
-    }).catch(() => {});
-  }, [selectedCards, roomId, clientId, socket]);
 
   // Total active/selected cartelas in the room across all players
   const totalActiveRoomCards = useMemo(() => {
@@ -310,9 +286,6 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     }
   }, [totalActiveRoomCards, minPlayers, isCountdownRunning, postGameDelayRemaining, countdownSeconds]);
 
-  const lockedUserCardsRef = useRef(lockedUserCards);
-  lockedUserCardsRef.current = lockedUserCards;
-
   const selectedCardsRef = useRef(selectedCards);
   selectedCardsRef.current = selectedCards;
 
@@ -324,9 +297,6 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
 
   const onConfirmPlayRef = useRef(onConfirmPlay);
   onConfirmPlayRef.current = onConfirmPlay;
-
-  const onDeductBalanceRef = useRef(onDeductBalance);
-  onDeductBalanceRef.current = onDeductBalance;
 
   // Live countdown timer: triggers ONLY when countdown is active (>= minPlayers cards registered)
   useEffect(() => {
@@ -342,47 +312,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
 
         if (prev <= 1) {
           clearInterval(interval);
-          if (onConfirmPlayRef.current) {
-            // Find any selected cards that user picked but hasn't paid for yet:
-            const unpaidCards = selectedCardsRef.current.filter(
-              (c) => !lockedUserCardsRef.current.includes(c)
-            );
-
-            // Deduct the stake for the unpaid playing cards so the wallet drops by (e.g. 120 - 20 = 100):
-            if (unpaidCards.length > 0) {
-              const unpaidCost = unpaidCards.length * stake;
-              if (onDeductBalanceRef.current) {
-                onDeductBalanceRef.current(unpaidCost);
-              }
-              if (roomId && telegramId) {
-                fetch(`${API_BASE_URL}/api/rooms/${roomId}/buy`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    telegramId,
-                    cartelaNumbers: unpaidCards,
-                  }),
-                }).catch(() => {});
-              }
-              setLockedUserCards((p) => [...p, ...unpaidCards]);
-              lockedUserCardsRef.current = [...lockedUserCardsRef.current, ...unpaidCards];
-            }
-
-            // When countdown finishes, everyone enters the live game:
-            // - If user confirmed cards or selected cards, they enter as active player
-            // - If user didn't pick any cards, they enter as spectator in "Watching Only" mode
-            const userPlayingCards = Array.from(
-              new Set([...lockedUserCardsRef.current, ...selectedCardsRef.current])
-            );
-            const allRoundCards = Array.from(
-              new Set([
-                ...registeredCardsRef.current,
-                ...selectedCardsRef.current,
-                ...otherPendingSelectionsRef.current,
-              ])
-            );
-            onConfirmPlayRef.current(userPlayingCards, allRoundCards);
-          }
+          transitionToLiveGame();
           return 0;
         }
         return prev - 1;
@@ -393,9 +323,6 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
   }, [isCountdownRunning]);
 
   const handleCardClick = (num: number) => {
-    // If cards already confirmed, cannot alter
-    if (lockedUserCards.length > 0) return;
-
     // If card is already taken by someone else
     if (takenCardsSet.has(num)) {
       showToast(`ካርቴላ #${num} በሌላ ተጫዋች ተይዟል (Already taken)`);
@@ -410,7 +337,11 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
 
     // If card is already selected by user, toggle off
     if (selectedCards.includes(num)) {
-      setSelectedCards(selectedCards.filter((c) => c !== num));
+      hasUserInteractedRef.current = true;
+      const next = selectedCards.filter((c) => c !== num);
+      setSelectedCards(next);
+      selectedCardsRef.current = next;
+      syncCardSelectionToServer(next);
       return;
     }
 
@@ -429,77 +360,15 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
       return;
     }
 
-    setSelectedCards([...selectedCards, num]);
-  };
-
-  const totalCost = selectedCards.length * stake;
-
-  const handleConfirmPurchase = async () => {
-    if (selectedCards.length === 0) {
-      showToast("Please pick at least 1 cartela");
-      return;
-    }
-    if (userBalance < totalCost) {
-      showToast("ቀሪ ሂሳብዎ በቂ አይደለም (Insufficient balance)");
-      return;
-    }
-
-    const cardsToBuy = [...selectedCards];
-
-    // Real API purchase if roomId and telegramId are present
-    if (roomId && telegramId) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/rooms/${roomId}/buy`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            telegramId,
-            cartelaNumbers: cardsToBuy,
-          }),
-        });
-        const data = await res.json();
-        if (!data.ok) {
-          showToast(data.error || "ካርቴላ መግዛት አልተቻለም");
-          return;
-        }
-
-        if (onDeductBalanceRef.current) {
-          onDeductBalanceRef.current(totalCost);
-        }
-        setLockedUserCards(cardsToBuy);
-        lockedUserCardsRef.current = cardsToBuy;
-
-        if (data.state && Array.isArray(data.state.takenCards)) {
-          setRegisteredCards(data.state.takenCards);
-        }
-        if (data.state?.status === "COUNTDOWN") {
-          setIsCountdownRunning(true);
-          setCountdown(data.state.countdown || countdownSeconds);
-        }
-        return;
-      } catch {
-        showToast("Error processing purchase. Please try again.");
-        return;
-      }
-    }
-
-    // Local state fallback if previewing without Telegram
-    if (onDeductBalanceRef.current) {
-      onDeductBalanceRef.current(totalCost);
-    }
-    setLockedUserCards(cardsToBuy);
-    lockedUserCardsRef.current = cardsToBuy;
-    setRegisteredCards((prev) => {
-      const combined = [...prev];
-      cardsToBuy.forEach((c) => {
-        if (!combined.includes(c)) combined.push(c);
-      });
-      return combined;
-    });
+    hasUserInteractedRef.current = true;
+    const next = [...selectedCards, num];
+    setSelectedCards(next);
+    selectedCardsRef.current = next;
+    syncCardSelectionToServer(next);
   };
 
   return (
-    <div className="flex flex-col h-full w-full max-w-md mx-auto text-white animate-fadeIn pb-24 relative">
+    <div className="flex flex-col h-full w-full max-w-md mx-auto text-white animate-fadeIn pb-16 relative">
       {/* Insufficient Balance Toast Notification (matches screenshot exactly) */}
       {toastMessage && (
         <div className="fixed top-2 left-2 right-2 z-50 max-w-md mx-auto animate-slideDown shadow-2xl">
@@ -554,9 +423,10 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
 
           <button
             onClick={() => {
-              if (lockedUserCards.length === 0) {
-                setSelectedCards([]);
-              }
+              hasUserInteractedRef.current = true;
+              setSelectedCards([]);
+              selectedCardsRef.current = [];
+              syncCardSelectionToServer([]);
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 active:scale-95 text-xs font-semibold transition"
           >
@@ -606,28 +476,27 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
       )}
 
       {/* Cartela Selection Grid (8 Columns Scrollable) */}
-      <div className="flex-1 overflow-y-auto px-2 py-3 bg-[#0a0c1b]/60 pb-24">
+      <div className="flex-1 overflow-y-auto px-2 py-3 bg-[#0a0c1b]/60 pb-16">
         <div className="grid grid-cols-8 gap-1.5">
           {Array.from({ length: cartelaPoolSize }, (_, i) => i + 1).map((num) => {
             const isTaken = takenCardsSet.has(num);
             const isPendingOther = otherPendingSet.has(num);
             const isSelected = selectedCards.includes(num);
-            const isLocked = lockedUserCards.includes(num);
 
             let bgClass = "bg-[#1b1f3b]/70 border border-white/10 text-gray-200 hover:border-cyan-400/50";
             if (isTaken) {
               bgClass = "bg-[#d84315] border border-[#ff5722] text-white opacity-90 cursor-not-allowed";
             } else if (isPendingOther) {
               bgClass = "bg-amber-600/80 border-2 border-amber-400 text-white font-extrabold shadow-[0_0_10px_rgba(251,191,36,0.6)] animate-pulse";
-            } else if (isLocked || isSelected) {
+            } else if (isSelected) {
               bgClass = "bg-[#00c853] border-2 border-[#69f0ae] text-black font-black shadow-[0_0_12px_rgba(0,200,83,0.6)] scale-[1.03]";
             }
 
             return (
               <button
                 key={num}
-                onClick={() => !isLocked && !isPendingOther && handleCardClick(num)}
-                disabled={isTaken || isLocked || isPendingOther}
+                onClick={() => !isPendingOther && handleCardClick(num)}
+                disabled={isTaken || isPendingOther}
                 className={`h-9 rounded-md flex items-center justify-center text-xs font-bold transition-all duration-100 ${bgClass}`}
               >
                 {num}
@@ -635,43 +504,6 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
             );
           })}
         </div>
-      </div>
-
-      {/* Bottom Sticky Action Bar: Confirm / Buy or Watching Only Info */}
-      <div className="fixed bottom-14 left-0 right-0 z-30 px-4 py-2 bg-[#0e1022]/95 backdrop-blur-md border-t border-white/10 max-w-md mx-auto">
-        {lockedUserCards.length > 0 ? (
-          <div className="w-full py-3 px-4 rounded-xl bg-emerald-600/90 text-white font-extrabold text-xs flex items-center justify-between shadow-lg">
-            <span>✅ {lockedUserCards.length} ካርቴላ ተመዝግቧል (#{lockedUserCards.join(", ")})</span>
-            <span className="text-amber-300">{countdown}s ውስጥ ይጀምራል</span>
-          </div>
-        ) : userBalance < stake ? (
-          <div className="w-full py-3 px-4 rounded-xl bg-purple-950/80 border border-purple-500/30 text-purple-200 text-xs font-bold flex items-center justify-between shadow-lg">
-            <div className="flex items-center gap-2">
-              <Eye className="w-4 h-4 text-purple-400 shrink-0" />
-              <span>ቀሪ ሂሳብ የለዎትም (Watching Only)</span>
-            </div>
-            <span className="text-amber-300 font-extrabold text-xs shrink-0">
-              {isCountdownRunning ? `⏳ ${countdown}s` : `⏳ ${totalActiveRoomCards}/${minPlayers}`}
-            </span>
-          </div>
-        ) : (
-          <button
-            onClick={handleConfirmPurchase}
-            disabled={selectedCards.length === 0}
-            className={`w-full py-3.5 px-4 rounded-xl font-extrabold text-sm flex items-center justify-center gap-2 transition-all ${
-              selectedCards.length > 0
-                ? "glow-btn-green text-white active:scale-98"
-                : "bg-white/10 text-gray-400 cursor-not-allowed"
-            }`}
-          >
-            <Check className="w-4 h-4" />
-            <span>
-              {selectedCards.length > 0
-                ? `ካርቴላ አረጋግጥ (${selectedCards.length} ካርድ • ${totalCost} ETB)`
-                : `ካርቴላ ይምረጡ (ከ1-${cartelaPoolSize})`}
-            </span>
-          </button>
-        )}
       </div>
     </div>
   );

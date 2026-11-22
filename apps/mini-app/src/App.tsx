@@ -34,6 +34,8 @@ export default function App() {
   const [playingCards, setPlayingCards] = useState<number[] | null>(null);
   const [registeredRoundCards, setRegisteredRoundCards] = useState<number[]>([]);
   const [currentRoundGameId, setCurrentRoundGameId] = useState<string>("");
+  const [initialCalledNumbers, setInitialCalledNumbers] = useState<number[]>([]);
+  const [initialCurrentBall, setInitialCurrentBall] = useState<any>(null);
 
   // User wallet balance (defaults to 0 just like in real accounts and the screenshot)
   const [userBalance, setUserBalance] = useState<number>(() => {
@@ -221,21 +223,32 @@ export default function App() {
 
   const handleSelectRoom = async (room: Room) => {
     setSelectedRoom(room);
+    const tgId = String(getTelegramId() || "");
     try {
       const res = await fetch(`${API_BASE_URL}/api/rooms/${room.id}/state`);
       const data = await res.json();
       if (data.ok && data.state) {
-        if (data.state.gameId || data.state.gameCode) {
-          setCurrentRoundGameId(data.state.gameId || data.state.gameCode);
+        const st = data.state;
+        if (st.gameId || st.gameCode) {
+          setCurrentRoundGameId(st.gameId || st.gameCode);
         }
-        if (data.state.status === "RUNNING" && (!Array.isArray(data.state.calledNumbers) || data.state.calledNumbers.length < 75)) {
-          // Ongoing game currently active: enter directly as spectator in Watching Only mode
-          setPlayingCards([]);
-          setRegisteredRoundCards(data.state.takenCards || []);
+        if (st.status === "RUNNING" && (!Array.isArray(st.calledNumbers) || st.calledNumbers.length < 75)) {
+          // Ongoing game currently active: restore user's own playing cards if they have tickets in this round,
+          // otherwise enter as spectator in Watching Only mode, and resume from current ball!
+          const myRoundCards: number[] =
+            (tgId && st.ticketsByTelegramId?.[tgId]) ||
+            (tgId && st.selectionsByClient?.[tgId]) ||
+            [];
+          setInitialCalledNumbers(Array.isArray(st.calledNumbers) ? st.calledNumbers : []);
+          setInitialCurrentBall(st.currentBall || null);
+          setPlayingCards(myRoundCards);
+          setRegisteredRoundCards(st.takenCards || []);
           return;
         }
       }
     } catch {}
+    setInitialCalledNumbers([]);
+    setInitialCurrentBall(null);
     setPlayingCards(null);
     setRegisteredRoundCards([]);
   };
@@ -244,6 +257,8 @@ export default function App() {
     setSelectedRoom(null);
     setPlayingCards(null);
     setRegisteredRoundCards([]);
+    setInitialCalledNumbers([]);
+    setInitialCurrentBall(null);
     handleRefreshUserData();
   };
 
@@ -263,12 +278,16 @@ export default function App() {
           freeCenter={selectedRoom.freeCenter ?? true}
           cartelaNumbers={playingCards}
           registeredCards={registeredRoundCards}
+          initialCalledNumbers={initialCalledNumbers}
+          initialCurrentBall={initialCurrentBall}
           userBalance={userBalance}
           onWinPrize={handleWinPrize}
           onLeave={handleBackToLobby}
           onNextRound={() => {
             setPlayingCards(null);
             setRegisteredRoundCards([]);
+            setInitialCalledNumbers([]);
+            setInitialCurrentBall(null);
             handleRefreshUserData();
           }}
         />
@@ -288,8 +307,11 @@ export default function App() {
           onBack={handleBackToLobby}
           onDeductBalance={handleDeductBalance}
           onConfirmPlay={(userCards, allRegisteredCards) => {
+            setInitialCalledNumbers([]);
+            setInitialCurrentBall(null);
             setPlayingCards(userCards);
             setRegisteredRoundCards(allRegisteredCards);
+            handleRefreshUserData();
           }}
         />
       ) : (

@@ -238,9 +238,8 @@ export class GameRoundService {
       });
 
       socket.on("disconnect", () => {
-        if (currentRoom) {
-          this.removeClient(currentRoom, currentClient);
-        }
+        // Keep player's selected cards in pendingSelections when they leave/close so their
+        // selection persists if they re-enter or when the round starts.
       });
     });
   }
@@ -269,7 +268,7 @@ export class GameRoundService {
       include: {
         tickets: {
           include: {
-            user: { select: { id: true, firstName: true, username: true } },
+            user: { select: { id: true, firstName: true, username: true, telegramId: true } },
           },
         },
         room: true,
@@ -391,6 +390,27 @@ export class GameRoundService {
     const cooldownEndsAt = this.roomNextGameAvailableAt.get(roomId) || 0;
     const postGameDelayRemaining = Math.max(0, Math.ceil((cooldownEndsAt - Date.now()) / 1000));
 
+    const ticketsByTelegramId: Record<string, number[]> = {};
+    for (const t of round.tickets) {
+      const tgKey = (t as any).user?.telegramId ? String((t as any).user.telegramId) : "";
+      if (tgKey) {
+        if (!ticketsByTelegramId[tgKey]) ticketsByTelegramId[tgKey] = [];
+        if (!ticketsByTelegramId[tgKey].includes(t.cartelaNumber)) {
+          ticketsByTelegramId[tgKey].push(t.cartelaNumber);
+        }
+      }
+    }
+
+    const selectionsByClient: Record<string, number[]> = {};
+    const roomPending = this.pendingSelections.get(roomId);
+    if (roomPending) {
+      for (const [cId, cards] of roomPending.entries()) {
+        if (Array.isArray(cards) && cards.length > 0) {
+          selectionsByClient[String(cId)] = [...cards];
+        }
+      }
+    }
+
     return {
       roomId,
       roundId: round.id,
@@ -405,6 +425,8 @@ export class GameRoundService {
       ticketsCount,
       derash,
       takenCards,
+      ticketsByTelegramId,
+      selectionsByClient,
       pendingSelections: this.getPendingSelections(roomId),
       countdown: remainingCountdown,
       calledNumbers: round.calledNumbers,
@@ -421,7 +443,7 @@ export class GameRoundService {
   }
 
   /**
-   * Buy tickets using real wallet balance
+   * Buy tickets using real wallet balance (idempotent per user & round)
    */
   async buyTickets(input: {
     roomId: string;
@@ -444,24 +466,42 @@ export class GameRoundService {
     if (!user) throw new Error("USER_NOT_FOUND");
 
     const round = await this.getOrCreateActiveRound(roomId);
-    if (round.status === "RUNNING" || round.status === "FINISHED") {
+    if (round.status === "FINISHED" || (round.status === "RUNNING" && round.calledNumbers.length > 1)) {
       throw new Error("ROUND_ALREADY_STARTED");
     }
 
-    const stakeAmount = Number(round.room.stakeAmount);
-    const totalCost = cartelaNumbers.length * stakeAmount;
+    const uniqueRequested = Array.from(new Set(cartelaNumbers));
 
-    // 1. Check if any card is already taken in this round
+    // 1. Check existing tickets in this round
     const existingTickets = await prisma.gameTicket.findMany({
       where: {
         gameRoundId: round.id,
-        cartelaNumber: { in: cartelaNumbers },
+        cartelaNumber: { in: uniqueRequested },
       },
     });
-    if (existingTickets.length > 0) {
-      const takenList = existingTickets.map((t) => t.cartelaNumber).join(", ");
+
+    const takenByOthers = existingTickets.filter((t) => t.userId !== user.id);
+    if (takenByOthers.length > 0) {
+      const takenList = takenByOthers.map((t) => t.cartelaNumber).join(", ");
       throw new Error(`CARDS_ALREADY_TAKEN: ${takenList}`);
     }
+
+    const alreadyOwnedSet = new Set(
+      existingTickets.filter((t) => t.userId === user.id).map((t) => t.cartelaNumber)
+    );
+    const cardsToBuy = uniqueRequested.filter((c) => !alreadyOwnedSet.has(c));
+
+    const roomMap = this.pendingSelections.get(roomId);
+    if (roomMap) {
+      roomMap.delete(String(telegramId));
+    }
+
+    if (cardsToBuy.length === 0) {
+      return this.getRoomState(roomId);
+    }
+
+    const stakeAmount = Number(round.room.stakeAmount);
+    const totalCost = cardsToBuy.length * stakeAmount;
 
     // 2. Transact: deduct balance & create tickets
     let balanceAfterDeduct = 0;
@@ -469,7 +509,7 @@ export class GameRoundService {
       const balAfter = await deductBetTx(tx, user.id, totalCost, round.id);
       balanceAfterDeduct = Number(balAfter);
 
-      for (const cardNum of cartelaNumbers) {
+      for (const cardNum of cardsToBuy) {
         await tx.gameTicket.create({
           data: {
             gameRoundId: round.id,
@@ -482,8 +522,8 @@ export class GameRoundService {
       }
 
       // Update round pots based on room's house cut %
-      const newTotalTickets = round.tickets.length + cartelaNumbers.length;
-      const newTotalPot = newTotalTickets * stakeAmount;
+      const totalRoundTickets = await tx.gameTicket.count({ where: { gameRoundId: round.id } });
+      const newTotalPot = totalRoundTickets * stakeAmount;
       const houseCutPct = Number(round.room.houseCutPercent ?? 20) / 100;
       const newHouseCut = newTotalPot * houseCutPct;
       const newPrizePool = newTotalPot - newHouseCut;
@@ -502,8 +542,6 @@ export class GameRoundService {
       balance: balanceAfterDeduct,
       reason: "BET_DEDUCTED",
     });
-
-    this.removeClient(roomId, String(telegramId));
 
     // 3. Check if threshold of minPlayers/cards is reached to start countdown
     const updatedRound = await prisma.gameRound.findUnique({
@@ -678,10 +716,13 @@ export class GameRoundService {
    * Starts ball drawing every 3.5 seconds and checks real tickets for winner
    */
   async startRunningGame(roomId: string, roundId: string) {
-    // 1. Convert any remaining pending selections in this room into registered tickets
+    // 1. Snapshot and convert all pending selections in this room into registered tickets
+    // (Even if the player clicked Leave/Back without unselecting, their cards are purchased & balance deducted)
     const roomPending = this.pendingSelections.get(roomId);
     if (roomPending && roomPending.size > 0) {
-      for (const [clientId, cards] of roomPending.entries()) {
+      const pendingEntries = Array.from(roomPending.entries());
+      this.pendingSelections.delete(roomId);
+      for (const [clientId, cards] of pendingEntries) {
         if (!cards || cards.length === 0) continue;
         const numericId = String(clientId).replace(/\D/g, "");
         const tgId = BigInt(numericId.length > 0 ? numericId : "999001");
@@ -691,9 +732,10 @@ export class GameRoundService {
             telegramId: tgId,
             cartelaNumbers: cards,
           });
-        } catch {}
+        } catch (err) {
+          console.error(`[GameRound] Auto-buy pending cards failed for ${clientId}:`, err);
+        }
       }
-      this.pendingSelections.delete(roomId);
     }
 
     // 2. Check that the round actually has tickets to play

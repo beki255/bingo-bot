@@ -18,6 +18,10 @@ interface WinnerData {
   winningPatternKeys: Set<string>;
 }
 
+// Global module-level guard so "ጨዋታው ተጀምሯል" (aac_started.mp3) NEVER repeats twice or replays on re-entering mid-game
+const announcedStartRoundKeys = new Set<string>();
+let lastGameStartSoundTimestamp = 0;
+
 interface LiveGameProps {
   roomId?: string;
   gameId?: string;
@@ -30,6 +34,8 @@ interface LiveGameProps {
   freeCenter?: boolean;
   cartelaNumbers: number[];
   registeredCards: number[];
+  initialCalledNumbers?: number[];
+  initialCurrentBall?: { letter: BingoLetter; num: number } | null;
   userBalance: number;
   onWinPrize?: (prize: number) => void;
   onLeave: () => void;
@@ -46,13 +52,17 @@ export const LiveGame: React.FC<LiveGameProps> = ({
   callIntervalMs = 3500,
   winnerDelaySeconds = 6,
   freeCenter = true,
-  cartelaNumbers,
+  cartelaNumbers: propCartelaNumbers,
   registeredCards,
+  initialCalledNumbers = [],
+  initialCurrentBall = null,
   userBalance,
   onWinPrize,
   onLeave,
   onNextRound,
 }) => {
+  const [serverUserCards, setServerUserCards] = useState<number[]>([]);
+  const cartelaNumbers = propCartelaNumbers.length > 0 ? propCartelaNumbers : serverUserCards;
   const isWatchingOnly = cartelaNumbers.length === 0;
 
   // Active cartela switcher (if user plays multiple cards)
@@ -62,10 +72,10 @@ export const LiveGame: React.FC<LiveGameProps> = ({
   // Real synchronized Game ID from server
   const [displayGameId, setDisplayGameId] = useState<string>(initialGameId || "TB100001");
 
-  // Ball calling state synchronized with server
+  // Ball calling state synchronized with server (initialized immediately if re-entering an ongoing game)
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [calledNumbers, setCalledNumbers] = useState<number[]>([]);
-  const [currentBall, setCurrentBall] = useState<{ letter: BingoLetter; num: number } | null>(null);
+  const [calledNumbers, setCalledNumbers] = useState<number[]>(initialCalledNumbers);
+  const [currentBall, setCurrentBall] = useState<{ letter: BingoLetter; num: number } | null>(initialCurrentBall);
   const [serverDerash, setServerDerash] = useState<number | null>(null);
   const [serverPlayersCount, setServerPlayersCount] = useState<number>(registeredCards.length);
 
@@ -92,7 +102,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
   winnerDataRef.current = winnerData;
   const hasAwardedPrizeRef = useRef(false);
   const hasGameEndedRef = useRef(false);
-  const hasAnnouncedStartRef = useRef(false);
+  const hasAnnouncedStartRef = useRef(initialCalledNumbers.length > 1);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const audioCacheRef = useRef<Map<string, HTMLAudioElement>>(new Map());
 
@@ -195,10 +205,23 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     });
   };
 
-  // 2. Real Game Started Voice: aac_started.mp3 ("ጨዋታው ተጀምሯል") - plays strictly once per round
-  const playGameStartedSound = () => {
+  // 2. Real Game Started Voice: aac_started.mp3 ("ጨዋታው ተጀምሯል") - plays strictly once per round, never repeats or plays mid-game
+  const playGameStartedSound = (roundKey?: string) => {
     if (hasAnnouncedStartRef.current) return;
+    const key = roundKey || initialGameId || displayGameId || roomId || "round";
+    if (key && announcedStartRoundKeys.has(key)) {
+      hasAnnouncedStartRef.current = true;
+      return;
+    }
+    const now = Date.now();
+    if (now - lastGameStartSoundTimestamp < 10000) {
+      hasAnnouncedStartRef.current = true;
+      if (key) announcedStartRoundKeys.add(key);
+      return;
+    }
     hasAnnouncedStartRef.current = true;
+    if (key) announcedStartRoundKeys.add(key);
+    lastGameStartSoundTimestamp = now;
     playAudioFile("aac_started.mp3");
   };
 
@@ -287,16 +310,6 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     setMarkedCells(initMarked);
   }, [cartelaNumbers, freeCenter]);
 
-  // Voice announcement: "ጨዋታው ተጀምሯል" (aac_started.mp3) on game start
-  useEffect(() => {
-    if (!hasAnnouncedStartRef.current && calledNumbers.length <= 1) {
-      const t = setTimeout(() => {
-        playGameStartedSound();
-      }, 50);
-      return () => clearTimeout(t);
-    }
-  }, []);
-
   // Real-time server Socket.IO multiplayer connection
   useEffect(() => {
     if (!roomId) return;
@@ -306,6 +319,22 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       reconnectionAttempts: 10,
     });
 
+    const syncUserCardsFromState = (st: any) => {
+      const tgKey = String(telegramId || clientId || "");
+      if (!tgKey) return;
+      const myTickets = st?.ticketsByTelegramId?.[tgKey];
+      const mySelections = st?.selectionsByClient?.[tgKey];
+      const resolved =
+        Array.isArray(myTickets) && myTickets.length > 0
+          ? myTickets
+          : Array.isArray(mySelections) && mySelections.length > 0
+          ? mySelections
+          : null;
+      if (resolved && resolved.length > 0) {
+        setServerUserCards(resolved);
+      }
+    };
+
     s.on("connect", () => {
       s.emit("join_room", { roomId, clientId: clientId || telegramId });
     });
@@ -314,6 +343,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       if (state?.gameId || state?.gameCode) {
         setDisplayGameId(state.gameId || state.gameCode);
       }
+      syncUserCardsFromState(state);
       if (Array.isArray(state?.calledNumbers)) {
         setCalledNumbers(state.calledNumbers);
       }
@@ -326,16 +356,23 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       if (typeof state?.ticketsCount === "number") {
         setServerPlayersCount(state.ticketsCount);
       }
-      if (state?.status === "RUNNING" && (!Array.isArray(state?.calledNumbers) || state.calledNumbers.length <= 1)) {
-        playGameStartedSound();
+      if (state?.status === "RUNNING") {
+        const count = Array.isArray(state?.calledNumbers) ? state.calledNumbers.length : 0;
+        const rKey = state?.roundId || state?.gameId || state?.gameCode;
+        if (count <= 1) {
+          playGameStartedSound(rKey);
+        } else {
+          hasAnnouncedStartRef.current = true;
+          if (rKey) announcedStartRoundKeys.add(rKey);
+        }
       }
       if (state?.status === "WAITING" && !hasGameEndedRef.current && !winnerDataRef.current) {
         if (onNextRound) onNextRound();
       }
     });
 
-    s.on("game_started", () => {
-      playGameStartedSound();
+    s.on("game_started", (data: any) => {
+      playGameStartedSound(data?.roundId || data?.gameId);
     });
 
     s.on("ball_called", (data: any) => {
@@ -394,10 +431,21 @@ export const LiveGame: React.FC<LiveGameProps> = ({
         if (data.ok && data.state) {
           const st = data.state;
           if (st.gameId || st.gameCode) setDisplayGameId(st.gameId || st.gameCode);
+          syncUserCardsFromState(st);
           if (Array.isArray(st.calledNumbers)) setCalledNumbers(st.calledNumbers);
           if (st.currentBall) setCurrentBall(st.currentBall);
           if (typeof st.derash === "number") setServerDerash(st.derash);
           if (typeof st.ticketsCount === "number") setServerPlayersCount(st.ticketsCount);
+          if (st.status === "RUNNING") {
+            const count = Array.isArray(st.calledNumbers) ? st.calledNumbers.length : 0;
+            const rKey = st.roundId || st.gameId || st.gameCode;
+            if (count <= 1) {
+              playGameStartedSound(rKey);
+            } else {
+              hasAnnouncedStartRef.current = true;
+              if (rKey) announcedStartRoundKeys.add(rKey);
+            }
+          }
           if (st.status === "WAITING" && !hasGameEndedRef.current && !winnerDataRef.current) {
             if (onNextRound) onNextRound();
           }
@@ -413,6 +461,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
         if (data.ok && data.state) {
           const st = data.state;
           if (st.gameId || st.gameCode) setDisplayGameId(st.gameId || st.gameCode);
+          syncUserCardsFromState(st);
           if (Array.isArray(st.calledNumbers)) setCalledNumbers(st.calledNumbers);
           if (st.currentBall) setCurrentBall(st.currentBall);
           if (st.status === "WAITING" && !hasGameEndedRef.current && !winnerDataRef.current) {
