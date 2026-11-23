@@ -104,7 +104,7 @@ async function requireAdmin(
     }
     const decoded = jwt.verify(token, env.adminJwtSecret) as AdminJwtPayload;
     const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
-    if (!user || user.isBanned || !isAdminRole(user.role)) {
+    if (!user || user.isBanned || user.role !== "SUPER_ADMIN") {
       res.status(401).json({ ok: false, error: "ADMIN_SESSION_INVALID" });
       return;
     }
@@ -172,8 +172,14 @@ export function createAdminRouter() {
           include: { user: true },
           orderBy: { createdAt: "desc" },
         });
-        if (!otp || !otp.user || otp.user.isBanned || !isAdminRole(otp.user.role)) {
-          res.status(401).json({ ok: false, error: "Invalid or expired 6-digit OTP code." });
+        if (!otp || !otp.user || otp.user.isBanned || otp.user.role !== "SUPER_ADMIN") {
+          res.status(401).json({
+            ok: false,
+            error:
+              otp?.user?.role === "CASHIER"
+                ? "Admin Web Portal is restricted to Super Admin only. Cashiers operate via Telegram Bot."
+                : "Invalid or expired 6-digit OTP code.",
+          });
           return;
         }
         await prisma.adminOtpCode.update({
@@ -222,7 +228,7 @@ export function createAdminRouter() {
 
       const candidates = await prisma.user.findMany({
         where: {
-          role: { in: ["SUPER_ADMIN", "CASHIER"] },
+          role: "SUPER_ADMIN",
           isBanned: false,
           OR: orFilters,
         },

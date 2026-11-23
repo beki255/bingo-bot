@@ -1207,18 +1207,23 @@ class BotService {
       getSystemSettings(),
     ]);
 
+    const isSuper = user.role === "SUPER_ADMIN";
     const msg =
       lang === "AM"
-        ? `🛡️ <b>${escapeHtml(settings.botName)} — የአድሚን ፈጣን መቆጣጠሪያ (Cashier Bot)</b>\n\n` +
+        ? `🛡️ <b>${escapeHtml(settings.botName)} — ${isSuper ? "የአድሚን ፈጣን መቆጣጠሪያ (Admin Bot)" : "የካሺየር መቆጣጠሪያ (Cashier Bot)"}</b>\n\n` +
           `👤 ኃላፊነት: <b>${escapeHtml(user.role)}</b>\n` +
           `⏳ በመጠባበቅ ላይ ያሉ ገቢዎች: <b>${pendingDeposits}</b>\n` +
           `⏳ በመጠባበቅ ላይ ያሉ ወጪዎች: <b>${pendingWithdraws}</b>\n\n` +
-          `<i>ይህ ቦት ለፈጣን የገንዘብ ማጽደቂያ ብቻ የተዘጋጀ ነው። ሙሉ የተጠቃሚዎች፣ ሩሞችና የሲስተም አስተዳደር በWeb Admin Portal ላይ ይገኛል!</i>`
-        : `🛡️ <b>${escapeHtml(settings.botName)} — Admin Cashier Bot</b>\n\n` +
+          (isSuper
+            ? `<i>ይህ ቦት ለፈጣን የገንዘብ ማጽደቂያ እና ፖስት የተዘጋጀ ነው። ሙሉ የተጠቃሚዎች፣ ሩሞችና የሲስተም አስተዳደር በWeb Admin Portal ላይ ይገኛል!</i>`
+            : `<i>ይህ ቦት ለፈጣን የDeposit/Withdraw ማጽደቂያ እና ለቻናል/ግሩፕ ፖስት የተዘጋጀ ነው።</i>`)
+        : `🛡️ <b>${escapeHtml(settings.botName)} — ${isSuper ? "Admin Bot" : "Cashier Bot"}</b>\n\n` +
           `👤 Role: <b>${escapeHtml(user.role)}</b>\n` +
           `⏳ Pending Deposits: <b>${pendingDeposits}</b>\n` +
           `⏳ Pending Withdraws: <b>${pendingWithdraws}</b>\n\n` +
-          `<i>Streamlined for instant approvals. Full management is on the Web Admin Portal!</i>`;
+          (isSuper
+            ? `<i>Streamlined for instant approvals &amp; posts. Full management is on the Web Admin Portal!</i>`
+            : `<i>Streamlined for instant Deposit/Withdraw approvals and Channel &amp; Group posting.</i>`);
 
     const kb = new InlineKeyboard();
     kb.text(
@@ -1236,7 +1241,7 @@ class BotService {
       "adm:channel_post"
     ).row();
 
-    if (env.adminWebUrl) {
+    if (isSuper && env.adminWebUrl) {
       if (env.adminWebUrl.startsWith("https://")) {
         kb.webApp(lang === "AM" ? "🌐 Admin Web Portal ክፈት" : "🌐 Open Admin Web", env.adminWebUrl).row();
       } else {
@@ -1244,15 +1249,18 @@ class BotService {
       }
     }
 
-    kb.text(lang === "AM" ? "🔐 የWeb መግቢያ ኮድ (OTP)" : "🔐 Web Login OTP", "adm:web_code")
-      .text(lang === "AM" ? "🌐 ቋንቋ / Language" : "🌐 ቋንቋ / Language", "adm:lang");
+    if (isSuper) {
+      kb.text(lang === "AM" ? "🔐 የWeb መግቢያ ኮድ (OTP)" : "🔐 Web Login OTP", "adm:web_code");
+    }
+    kb.text(lang === "AM" ? "🌐 ቋንቋ / Language" : "🌐 ቋንቋ / Language", "adm:lang");
 
     await reply(msg, { parse_mode: "HTML", reply_markup: kb });
   }
 
   private async sendAdminChannelPostPanel(
     reply: (text: string, opts?: object) => Promise<unknown>,
-    lang: Language
+    lang: Language,
+    userRole: string = "SUPER_ADMIN"
   ) {
     const s = await getSystemSettings();
     const cfg = this.parseChannelGroupConfig(s.channelUrl);
@@ -1275,11 +1283,15 @@ class BotService {
       .row()
       .text(lang === "AM" ? "📢 ለቻናል ብቻ (Channel)" : "📢 Channel Only", "adm:ch_post:CHANNEL")
       .text(lang === "AM" ? "👥 ለግሩፕ ብቻ (Group)" : "👥 Group Only", "adm:ch_post:GROUP")
-      .row()
-      .text(lang === "AM" ? "✏️ የቻናል ሊንክ ቀይር" : "✏️ Set Channel Link", "adm:ch_set:CHANNEL")
-      .text(lang === "AM" ? "✏️ የግሩፕ ሊንክ ቀይር" : "✏️ Set Group Link", "adm:ch_set:GROUP")
-      .row()
-      .text("🔙 Admin Panel", "adm:home");
+      .row();
+
+    if (userRole === "SUPER_ADMIN") {
+      kb.text(lang === "AM" ? "✏️ የቻናል ሊንክ ቀይር" : "✏️ Set Channel Link", "adm:ch_set:CHANNEL")
+        .text(lang === "AM" ? "✏️ የግሩፕ ሊንክ ቀይር" : "✏️ Set Group Link", "adm:ch_set:GROUP")
+        .row();
+    }
+
+    kb.text("🔙 Admin Panel", "adm:home");
 
     await reply(msg, { parse_mode: "HTML", reply_markup: kb });
   }
@@ -1588,8 +1600,21 @@ class BotService {
     text: string,
     reply: (t: string, opts?: object) => Promise<unknown>
   ): Promise<boolean> {
-    if (user.role !== "SUPER_ADMIN") return false;
+    if (!this.isAdminRole(user.role)) return false;
     const lang: Language = user.language || "AM";
+
+    if (state.step === "ADMIN_CHANNEL_POST") {
+      const outcome = await this.postToChannelAndGroup({
+        target: state.target,
+        htmlText: escapeHtml(text),
+      });
+      await this.setBotState(user.id, null);
+      await reply(this.formatChannelPostResultsMsg(outcome.results, lang), { parse_mode: "HTML" });
+      await this.sendAdminChannelPostPanel(reply, lang, user.role);
+      return true;
+    }
+
+    if (user.role !== "SUPER_ADMIN") return false;
 
     if (state.step === "ADMIN_SET_CHANNEL_TARGET") {
       const s = await getSystemSettings();
@@ -1608,18 +1633,7 @@ class BotService {
           ? `✅ የ${state.which === "CHANNEL" ? "ቻናል" : "ግሩፕ"} ሊንክ ተቀምጧል!`
           : `✅ ${state.which === "CHANNEL" ? "Channel" : "Group"} link saved!`
       );
-      await this.sendAdminChannelPostPanel(reply, lang);
-      return true;
-    }
-
-    if (state.step === "ADMIN_CHANNEL_POST") {
-      const outcome = await this.postToChannelAndGroup({
-        target: state.target,
-        htmlText: escapeHtml(text),
-      });
-      await this.setBotState(user.id, null);
-      await reply(this.formatChannelPostResultsMsg(outcome.results, lang), { parse_mode: "HTML" });
-      await this.sendAdminChannelPostPanel(reply, lang);
+      await this.sendAdminChannelPostPanel(reply, lang, user.role);
       return true;
     }
 
@@ -2245,15 +2259,19 @@ class BotService {
           { parse_mode: "HTML", reply_markup: { remove_keyboard: true } }
         ).catch(() => {});
         if (ctx.chat) {
+          const cmds =
+            user.role === "SUPER_ADMIN"
+              ? [
+                  { command: "admin", description: "Admin Control Panel" },
+                  { command: "adminlogin", description: "Web Login OTP Code" },
+                  { command: "lang", description: "Switch Language / ቋንቋ" },
+                ]
+              : [
+                  { command: "admin", description: "Cashier Bot Panel" },
+                  { command: "lang", description: "Switch Language / ቋንቋ" },
+                ];
           await bot.api
-            .setMyCommands(
-              [
-                { command: "admin", description: "Admin Cashier Panel" },
-                { command: "adminlogin", description: "Web Login OTP Code" },
-                { command: "lang", description: "Switch Language / ቋንቋ" },
-              ],
-              { scope: { type: "chat", chat_id: ctx.chat.id } }
-            )
+            .setMyCommands(cmds, { scope: { type: "chat", chat_id: ctx.chat.id } })
             .catch(() => {});
         }
         await this.sendAdminPanel((text, opts) => ctx.reply(text, opts), user);
@@ -2298,15 +2316,19 @@ class BotService {
       if (!user || !this.isAdminRole(user.role) || user.isBanned) return;
       await this.setBotState(user.id, null);
       if (ctx.chat) {
+        const cmds =
+          user.role === "SUPER_ADMIN"
+            ? [
+                { command: "admin", description: "Admin Control Panel" },
+                { command: "adminlogin", description: "Web Login OTP Code" },
+                { command: "lang", description: "Switch Language / ቋንቋ" },
+              ]
+            : [
+                { command: "admin", description: "Cashier Bot Panel" },
+                { command: "lang", description: "Switch Language / ቋንቋ" },
+              ];
         await bot.api
-          .setMyCommands(
-            [
-              { command: "admin", description: "Admin Cashier Panel" },
-              { command: "adminlogin", description: "Web Login OTP Code" },
-              { command: "lang", description: "Switch Language / ቋንቋ" },
-            ],
-            { scope: { type: "chat", chat_id: ctx.chat.id } }
-          )
+          .setMyCommands(cmds, { scope: { type: "chat", chat_id: ctx.chat.id } })
           .catch(() => {});
       }
       await this.sendAdminPanel((text, opts) => ctx.reply(text, opts), user);
@@ -2450,7 +2472,7 @@ class BotService {
     bot.command("adminlogin", async (ctx) => {
       if (!ctx.from) return;
       const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from.id) } });
-      if (!user || !this.isAdminRole(user.role) || user.isBanned) return;
+      if (!user || user.role !== "SUPER_ADMIN" || user.isBanned) return;
       await this.sendAdminLoginCode(user.id, user.language || "AM", (text, opts) => ctx.reply(text, opts));
     });
 
@@ -2636,6 +2658,10 @@ class BotService {
         }
 
         if (data === "adm:web_code") {
+          if (caller.role !== "SUPER_ADMIN") {
+            await ctx.answerCallbackQuery({ text: "Super Admin only", show_alert: true });
+            return;
+          }
           await ctx.answerCallbackQuery();
           await this.sendAdminLoginCode(caller.id, adminLang, (t, opts) => ctx.reply(t, opts));
           return;
@@ -2644,11 +2670,15 @@ class BotService {
         if (data === "adm:channel_post") {
           await this.setBotState(caller.id, null);
           await ctx.answerCallbackQuery();
-          await this.sendAdminChannelPostPanel((t, opts) => ctx.reply(t, opts), adminLang);
+          await this.sendAdminChannelPostPanel((t, opts) => ctx.reply(t, opts), adminLang, caller.role);
           return;
         }
 
         if (data.startsWith("adm:ch_set:")) {
+          if (caller.role !== "SUPER_ADMIN") {
+            await ctx.answerCallbackQuery({ text: "Super Admin only", show_alert: true });
+            return;
+          }
           const which = data.slice("adm:ch_set:".length) === "GROUP" ? "GROUP" : "CHANNEL";
           await this.setBotState(caller.id, { step: "ADMIN_SET_CHANNEL_TARGET", which });
           await ctx.answerCallbackQuery();
@@ -3437,7 +3467,7 @@ class BotService {
         });
         await this.setBotState(user.id, null);
         await ctx.reply(this.formatChannelPostResultsMsg(outcome.results, lang), { parse_mode: "HTML" });
-        await this.sendAdminChannelPostPanel((t, opts) => ctx.reply(t, opts), lang);
+        await this.sendAdminChannelPostPanel((t, opts) => ctx.reply(t, opts), lang, user.role);
         return;
       }
 
@@ -3529,7 +3559,7 @@ class BotService {
         });
         await this.setBotState(user.id, null);
         await ctx.reply(this.formatChannelPostResultsMsg(outcome.results, lang), { parse_mode: "HTML" });
-        await this.sendAdminChannelPostPanel((t, opts) => ctx.reply(t, opts), lang);
+        await this.sendAdminChannelPostPanel((t, opts) => ctx.reply(t, opts), lang, user.role);
       }
     });
 
