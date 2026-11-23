@@ -825,16 +825,16 @@ export const LiveGame: React.FC<LiveGameProps> = ({
               </span>
             </div>
 
-            {/* Automatic Toggle Switch (Locked ON in Automatic-only mode; non-clickable, normal green appearance) */}
+            {/* Automatic Toggle Switch (Locked ON in Automatic-only mode; non-clickable, muted color matching bottom Automatic bar) */}
             <div className="w-full flex items-center justify-between px-2 pt-1 border-t border-white/5 mt-1">
-              <span className="text-xs font-bold text-gray-300">Automatic</span>
+              <span className="text-xs font-bold text-gray-400">Automatic</span>
               <div
                 role="switch"
                 aria-checked={true}
                 aria-disabled="true"
-                className="w-10 h-5 rounded-full p-0.5 bg-emerald-500 pointer-events-none select-none"
+                className="w-10 h-5 rounded-full p-0.5 bg-[#5d4037]/90 border border-white/10 pointer-events-none select-none flex items-center"
               >
-                <div className="w-4 h-4 rounded-full bg-white translate-x-5" />
+                <div className="w-4 h-4 rounded-full bg-[#d7ccc8] translate-x-[18px]" />
               </div>
             </div>
           </div>
