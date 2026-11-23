@@ -50,6 +50,7 @@ export default function App() {
   const [isVerified, setIsVerified] = useState<boolean>(() => {
     return localStorage.getItem("bingo_user_verified") === "true";
   });
+  const [hasCheckedRegistration, setHasCheckedRegistration] = useState<boolean>(false);
 
   // User preferred language from bot registration
   const [userLang, setUserLang] = useState<"AM" | "EN">(() => {
@@ -157,7 +158,14 @@ export default function App() {
           localStorage.setItem("bingo_user_phone", data.phoneNumber);
           setIsVerified(true);
           localStorage.setItem("bingo_user_verified", "true");
+        } else if (data.isVerified) {
+          setIsVerified(true);
+          localStorage.setItem("bingo_user_verified", "true");
+        } else {
+          setIsVerified(false);
+          localStorage.setItem("bingo_user_verified", "false");
         }
+        setHasCheckedRegistration(true);
         if (data.language) {
           setUserLang(data.language);
           localStorage.setItem("bingo_user_lang", data.language);
@@ -261,6 +269,43 @@ export default function App() {
     setInitialCurrentBall(null);
     handleRefreshUserData();
   };
+
+  const isRealTelegramWebAppUser = Boolean(getTelegramUser()?.id);
+  const mustRegisterInBotFirst = isRealTelegramWebAppUser && hasCheckedRegistration && !isVerified;
+
+  if (mustRegisterInBotFirst) {
+    const handleGoToBotRegister = () => {
+      const botRegisterUrl = "https://t.me/Zemen_Bingo_et_bot?start=register";
+      const tg = typeof window !== "undefined" ? (window as any).Telegram?.WebApp : null;
+      if (tg?.openTelegramLink) {
+        tg.openTelegramLink(botRegisterUrl);
+        tg.close?.();
+      } else {
+        window.location.href = botRegisterUrl;
+      }
+    };
+
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-white bg-[#0c0d1c] text-center animate-fadeIn">
+        <div className="w-full max-w-sm bg-[#141733] border border-amber-400/30 rounded-3xl p-6 shadow-2xl flex flex-col items-center gap-4">
+          <div className="w-16 h-16 rounded-full bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center text-amber-400">
+            <AlertCircle className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-black text-white">መጀመሪያ ይመዝገቡ</h2>
+          <p className="text-xs text-gray-300 leading-relaxed">
+            ወደ <b>Zemen Bingo</b> ጨዋታ ለመግባት በመጀመሪያ በቦቱ ላይ ስልክ ቁጥርዎን አጋርተው መመዝገብ አለብዎት።
+          </p>
+          <button
+            type="button"
+            onClick={handleGoToBotRegister}
+            className="w-full py-3.5 px-5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-black font-black text-sm shadow-lg shadow-amber-500/30 active:scale-95 transition"
+          >
+            📲 ወደ ቦቱ ሄደው ይመዝገቡ (Register)
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col justify-between text-white bg-[#0c0d1c]">

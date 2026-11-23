@@ -8,6 +8,7 @@ export type AdminTab =
   | "rooms"
   | "accounts"
   | "broadcast"
+  | "channel_post"
   | "settings"
   | "audit";
 

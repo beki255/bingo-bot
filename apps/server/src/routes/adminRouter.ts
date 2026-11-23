@@ -2081,6 +2081,132 @@ export function createAdminRouter() {
   });
 
   // =========================================================================
+  // 12B. TELEGRAM CHANNEL & GROUP POST CENTER
+  // =========================================================================
+  router.get("/channel-post/config", requireSuperAdmin, async (_req, res) => {
+    try {
+      const s = await getSystemSettings();
+      const cfg = botService.parseChannelGroupConfig(s.channelUrl);
+      res.json({
+        ok: true,
+        channelTarget: cfg.channelTarget,
+        groupTarget: cfg.groupTarget,
+      });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: "FAILED_FETCH_CHANNEL_CONFIG" });
+    }
+  });
+
+  router.put("/channel-post/config", requireSuperAdmin, async (req, res) => {
+    try {
+      const channelTarget = typeof req.body?.channelTarget === "string" ? req.body.channelTarget.trim() : "";
+      const groupTarget = typeof req.body?.groupTarget === "string" ? req.body.groupTarget.trim() : "";
+      const combined = botService.formatChannelGroupConfig(channelTarget, groupTarget);
+      await prisma.systemSettings.update({
+        where: { id: 1 },
+        data: { channelUrl: combined },
+      });
+      await recordAuditLog(prisma, {
+        actorId: req.admin!.id,
+        actorRole: req.admin!.role,
+        action: "UPDATE_CHANNEL_GROUP_CONFIG",
+        targetType: "SystemSettings",
+        targetId: "1",
+        after: { channelTarget, groupTarget },
+      });
+      res.json({ ok: true, channelTarget, groupTarget });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: "FAILED_SAVE_CHANNEL_CONFIG" });
+    }
+  });
+
+  const channelPostSchema = z.object({
+    target: z.enum(["BOTH", "CHANNEL", "GROUP"]).default("BOTH"),
+    message: z.string().trim().max(3800).optional().default(""),
+    mediaType: z.enum(["photo", "video"]).nullable().optional(),
+    mediaDataUrl: z.string().max(45_000_000).nullable().optional(),
+    mediaFileName: z.string().max(255).nullable().optional(),
+    channelTarget: z.string().trim().max(250).optional(),
+    groupTarget: z.string().trim().max(250).optional(),
+  });
+
+  router.post("/channel-post", requireSuperAdmin, async (req, res) => {
+    try {
+      const parsed = channelPostSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ ok: false, error: "Invalid post payload." });
+        return;
+      }
+
+      const rawMessage = parsed.data.message.trim();
+      const mediaType = parsed.data.mediaType || null;
+      const mediaDataUrl = parsed.data.mediaDataUrl?.trim() || null;
+
+      if (!rawMessage && !mediaDataUrl) {
+        res.status(400).json({ ok: false, error: "Please enter a message or attach a photo/video." });
+        return;
+      }
+
+      // Persist updated channel/group targets if provided
+      if (parsed.data.channelTarget !== undefined || parsed.data.groupTarget !== undefined) {
+        const s = await getSystemSettings();
+        const currentCfg = botService.parseChannelGroupConfig(s.channelUrl);
+        const nextCh = parsed.data.channelTarget !== undefined ? parsed.data.channelTarget : currentCfg.channelTarget;
+        const nextGr = parsed.data.groupTarget !== undefined ? parsed.data.groupTarget : currentCfg.groupTarget;
+        await prisma.systemSettings.update({
+          where: { id: 1 },
+          data: { channelUrl: botService.formatChannelGroupConfig(nextCh, nextGr) },
+        });
+      }
+
+      let mediaBuffer: Buffer | null = null;
+      let mediaUrl: string | null = null;
+
+      if (mediaDataUrl && mediaType) {
+        if (mediaDataUrl.startsWith("data:")) {
+          const commaIdx = mediaDataUrl.indexOf(",");
+          if (commaIdx !== -1) {
+            mediaBuffer = Buffer.from(mediaDataUrl.slice(commaIdx + 1), "base64");
+          }
+        } else if (mediaDataUrl.startsWith("http://") || mediaDataUrl.startsWith("https://")) {
+          mediaUrl = mediaDataUrl;
+        }
+      }
+
+      const formatted = rawMessage ? escapeHtml(rawMessage) : "";
+      const outcome = await botService.postToChannelAndGroup({
+        target: parsed.data.target,
+        htmlText: formatted,
+        mediaType,
+        mediaBuffer,
+        mediaUrl,
+        mediaFileName: parsed.data.mediaFileName || (mediaType === "video" ? "video.mp4" : "photo.jpg"),
+        channelOverride: parsed.data.channelTarget,
+        groupOverride: parsed.data.groupTarget,
+      });
+
+      await recordAuditLog(prisma, {
+        actorId: req.admin!.id,
+        actorRole: req.admin!.role,
+        action: "TELEGRAM_CHANNEL_GROUP_POST",
+        targetType: "ChannelGroupPost",
+        targetId: parsed.data.target,
+        after: {
+          target: parsed.data.target,
+          mediaType: mediaType || "text",
+          results: outcome.results,
+          preview: rawMessage.slice(0, 200),
+        },
+      });
+
+      res.json({ ok: outcome.ok, results: outcome.results });
+    } catch (err) {
+      console.error("Channel/Group post error:", err);
+      res.status(500).json({ ok: false, error: "FAILED_CHANNEL_POST" });
+    }
+  });
+
+  // =========================================================================
   // 13. IMMUTABLE AUDIT LOGS
   // =========================================================================
   router.get("/audit-logs", async (req, res) => {

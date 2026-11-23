@@ -12,6 +12,7 @@ import { TransactionsView } from "./views/TransactionsView";
 import { RoomsView } from "./views/RoomsView";
 import { PaymentAccountsView } from "./views/PaymentAccountsView";
 import { BroadcastView } from "./views/BroadcastView";
+import { ChannelPostView } from "./views/ChannelPostView";
 import { SettingsView } from "./views/SettingsView";
 import { AuditLogsView } from "./views/AuditLogsView";
 import { adminFetch, clearAuthToken, getAuthToken, API_BASE } from "./api";
@@ -53,6 +54,10 @@ const TAB_META: Record<AdminTab, { title: string; subtitle: string }> = {
   broadcast: {
     title: "Telegram Broadcast Center",
     subtitle: "Send mass announcements directly to players via @Zemen_Bingo_et_bot",
+  },
+  channel_post: {
+    title: "Post to Telegram Channel & Group",
+    subtitle: "Publish photos, videos, and announcements to your Channel and Group with a Play Bingo button",
   },
   settings: {
     title: "System Settings & Admin Auth",
@@ -229,6 +234,7 @@ export default function App() {
             <PaymentAccountsView admin={admin} refreshSignal={refreshSignal} />
           )}
           {activeTab === "broadcast" && <BroadcastView />}
+          {activeTab === "channel_post" && <ChannelPostView />}
           {activeTab === "settings" && (
             <SettingsView admin={admin} onAdminUpdated={(next) => setAdmin(next)} />
           )}

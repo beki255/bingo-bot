@@ -101,6 +101,8 @@ type BotConvState =
   | { step: "ADMIN_EDIT_PAYMENT_FIELD"; accountId: string; field: "accountNumber" | "accountName" | "provider" }
   | { step: "ADMIN_EDIT_SETTING"; field: AdminSettingKey }
   | { step: "ADMIN_EDIT_BANNER" }
+  | { step: "ADMIN_SET_CHANNEL_TARGET"; which: "CHANNEL" | "GROUP" }
+  | { step: "ADMIN_CHANNEL_POST"; target: "BOTH" | "CHANNEL" | "GROUP" }
   | null;
 
 interface AdminMsgRef {
@@ -163,6 +165,155 @@ class BotService {
       kb.text(playLabel, "menu:play");
     }
     return kb;
+  }
+
+  getChannelPostPlayKeyboard(): InlineKeyboard {
+    const botUser = (this.bot?.botInfo?.username || env.botUsername || "Zemen_Bingo_et_bot").replace(/^@/, "");
+    return new InlineKeyboard().url("🎮 ቢንጎ ተጫወት (Play Bingo)", `https://t.me/${botUser}?start=play`);
+  }
+
+  parseChannelGroupConfig(rawChannelUrl: string): { channelTarget: string; groupTarget: string } {
+    const raw = (rawChannelUrl || "").trim();
+    if (raw.includes("|||")) {
+      const [ch = "", gr = ""] = raw.split("|||");
+      return { channelTarget: ch.trim(), groupTarget: gr.trim() };
+    }
+    return {
+      channelTarget: raw,
+      groupTarget: (process.env.TELEGRAM_GROUP_URL || "").trim(),
+    };
+  }
+
+  formatChannelGroupConfig(channelTarget: string, groupTarget: string): string {
+    const ch = (channelTarget || "").trim();
+    const gr = (groupTarget || "").trim();
+    if (!gr) return ch;
+    return `${ch}|||${gr}`;
+  }
+
+  normalizeTelegramChatTarget(rawInput: string): string {
+    const raw = (rawInput || "").trim();
+    if (!raw) return "";
+    // Numeric chat ID (e.g. -1001234567890)
+    if (/^-?\d+$/.test(raw)) return raw;
+    // Already @username
+    if (raw.startsWith("@")) return raw;
+    // Public t.me link: https://t.me/username or t.me/username
+    const match = raw.match(/(?:https?:\/\/)?(?:www\.)?t\.me\/([a-zA-Z0-9_]+)/i);
+    if (match && match[1] && !match[1].startsWith("+") && match[1].toLowerCase() !== "joinchat") {
+      return `@${match[1]}`;
+    }
+    return `@${raw.replace(/^@/, "")}`;
+  }
+
+  async postToChannelAndGroup(options: {
+    target: "BOTH" | "CHANNEL" | "GROUP";
+    htmlText?: string;
+    mediaType?: "photo" | "video" | null;
+    mediaBuffer?: Buffer | null;
+    mediaFileId?: string | null;
+    mediaUrl?: string | null;
+    mediaFileName?: string | null;
+    channelOverride?: string;
+    groupOverride?: string;
+  }): Promise<{
+    ok: boolean;
+    results: Array<{ targetType: "CHANNEL" | "GROUP"; chatTarget: string; ok: boolean; error?: string }>;
+  }> {
+    if (!this.bot) {
+      return {
+        ok: false,
+        results: [{ targetType: "CHANNEL", chatTarget: "", ok: false, error: "BOT_NOT_RUNNING" }],
+      };
+    }
+
+    const settings = await getSystemSettings();
+    const parsedCfg = this.parseChannelGroupConfig(settings.channelUrl);
+    const channelRaw = options.channelOverride !== undefined ? options.channelOverride : parsedCfg.channelTarget;
+    const groupRaw = options.groupOverride !== undefined ? options.groupOverride : parsedCfg.groupTarget;
+
+    const destinations: Array<{ targetType: "CHANNEL" | "GROUP"; raw: string; chatId: string }> = [];
+    if (options.target === "BOTH" || options.target === "CHANNEL") {
+      const norm = this.normalizeTelegramChatTarget(channelRaw);
+      if (norm) destinations.push({ targetType: "CHANNEL", raw: channelRaw, chatId: norm });
+    }
+    if (options.target === "BOTH" || options.target === "GROUP") {
+      const norm = this.normalizeTelegramChatTarget(groupRaw);
+      if (norm) destinations.push({ targetType: "GROUP", raw: groupRaw, chatId: norm });
+    }
+
+    if (destinations.length === 0) {
+      return {
+        ok: false,
+        results: [
+          {
+            targetType: options.target === "GROUP" ? "GROUP" : "CHANNEL",
+            chatTarget: "",
+            ok: false,
+            error: "No Channel or Group link/username configured. Please enter the Channel/Group @username or t.me link.",
+          },
+        ],
+      };
+    }
+
+    const kb = this.getChannelPostPlayKeyboard();
+    const captionOrText = options.htmlText?.trim() || "";
+    const mediaType = options.mediaType || null;
+    let cachedFileId: string | null = options.mediaFileId || null;
+
+    const results: Array<{ targetType: "CHANNEL" | "GROUP"; chatTarget: string; ok: boolean; error?: string }> = [];
+
+    for (const dest of destinations) {
+      try {
+        if (mediaType === "photo") {
+          const source: string | InputFile = cachedFileId
+            ? cachedFileId
+            : options.mediaBuffer
+            ? new InputFile(options.mediaBuffer, options.mediaFileName || "post.jpg")
+            : (options.mediaUrl || "");
+
+          const msg: any = await this.bot.api.sendPhoto(dest.chatId, source, {
+            ...(captionOrText ? { caption: captionOrText.slice(0, 1024), parse_mode: "HTML" } : {}),
+            reply_markup: kb,
+          });
+          if (!cachedFileId && Array.isArray(msg?.photo) && msg.photo.length > 0) {
+            cachedFileId = msg.photo[msg.photo.length - 1].file_id;
+          }
+        } else if (mediaType === "video") {
+          const source: string | InputFile = cachedFileId
+            ? cachedFileId
+            : options.mediaBuffer
+            ? new InputFile(options.mediaBuffer, options.mediaFileName || "post.mp4")
+            : (options.mediaUrl || "");
+
+          const msg: any = await this.bot.api.sendVideo(dest.chatId, source, {
+            ...(captionOrText ? { caption: captionOrText.slice(0, 1024), parse_mode: "HTML" } : {}),
+            reply_markup: kb,
+          });
+          if (!cachedFileId && msg?.video?.file_id) {
+            cachedFileId = msg.video.file_id;
+          }
+        } else {
+          await this.bot.api.sendMessage(dest.chatId, captionOrText, {
+            parse_mode: "HTML",
+            reply_markup: kb,
+          });
+        }
+        results.push({ targetType: dest.targetType, chatTarget: dest.chatId, ok: true });
+      } catch (err: any) {
+        results.push({
+          targetType: dest.targetType,
+          chatTarget: dest.chatId,
+          ok: false,
+          error: err?.description || err?.message || "FAILED_TO_POST",
+        });
+      }
+    }
+
+    return {
+      ok: results.some((r) => r.ok),
+      results,
+    };
   }
 
   async sendBroadcastToRecipients(
@@ -878,6 +1029,11 @@ class BotService {
       )
       .row();
 
+    kb.text(
+      lang === "AM" ? "📢 ቻናል እና ግሩፕ ፖስት (Channel & Group)" : "📢 Post to Channel & Group",
+      "adm:channel_post"
+    ).row();
+
     if (env.adminWebUrl) {
       if (env.adminWebUrl.startsWith("https://")) {
         kb.webApp(lang === "AM" ? "🌐 Admin Web Portal ክፈት" : "🌐 Open Admin Web", env.adminWebUrl).row();
@@ -890,6 +1046,54 @@ class BotService {
       .text(lang === "AM" ? "🌐 ቋንቋ / Language" : "🌐 ቋንቋ / Language", "adm:lang");
 
     await reply(msg, { parse_mode: "HTML", reply_markup: kb });
+  }
+
+  private async sendAdminChannelPostPanel(
+    reply: (text: string, opts?: object) => Promise<unknown>,
+    lang: Language
+  ) {
+    const s = await getSystemSettings();
+    const cfg = this.parseChannelGroupConfig(s.channelUrl);
+    const chLabel = cfg.channelTarget ? escapeHtml(cfg.channelTarget) : (lang === "AM" ? "አልተሞላም (Not set)" : "Not set");
+    const grLabel = cfg.groupTarget ? escapeHtml(cfg.groupTarget) : (lang === "AM" ? "አልተሞላም (Not set)" : "Not set");
+
+    const msg =
+      lang === "AM"
+        ? `📢 <b>ወደ ቻናል እና ግሩፕ ፖስት ማድረጊያ (Channel &amp; Group Post)</b>\n\n` +
+          `• <b>ቻናል (Channel):</b> <code>${chLabel}</code>\n` +
+          `• <b>ግሩፕ (Group):</b> <code>${grLabel}</code>\n\n` +
+          `<i>ማሳሰቢያ፦ ቦቱ በቻናሉ እና በግሩፑ ውስጥ <b>Admin</b> መሆን አለበት። በእያንዳንዱ ፖስት ስር ተጫዋቾችን ወደ ጨዋታው (ወይም ካልተመዘገቡ ወደ ምዝገባ) የሚወስድ <b>🎮 ቢንጎ ተጫወት (Play Bingo)</b> በተን በራሱ ይጨመራል።</i>`
+        : `📢 <b>Post to Channel &amp; Group</b>\n\n` +
+          `• <b>Channel:</b> <code>${chLabel}</code>\n` +
+          `• <b>Group:</b> <code>${grLabel}</code>\n\n` +
+          `<i>Note: Make sure the bot is an <b>Admin</b> in the channel and group. Every post automatically includes the <b>🎮 Play Bingo</b> button.</i>`;
+
+    const kb = new InlineKeyboard()
+      .text(lang === "AM" ? "📢+👥 ለሁለቱም ፖስት አድርግ (Both)" : "📢+👥 Post to Both", "adm:ch_post:BOTH")
+      .row()
+      .text(lang === "AM" ? "📢 ለቻናል ብቻ (Channel)" : "📢 Channel Only", "adm:ch_post:CHANNEL")
+      .text(lang === "AM" ? "👥 ለግሩፕ ብቻ (Group)" : "👥 Group Only", "adm:ch_post:GROUP")
+      .row()
+      .text(lang === "AM" ? "✏️ የቻናል ሊንክ ቀይር" : "✏️ Set Channel Link", "adm:ch_set:CHANNEL")
+      .text(lang === "AM" ? "✏️ የግሩፕ ሊንክ ቀይር" : "✏️ Set Group Link", "adm:ch_set:GROUP")
+      .row()
+      .text("🔙 Admin Panel", "adm:home");
+
+    await reply(msg, { parse_mode: "HTML", reply_markup: kb });
+  }
+
+  private formatChannelPostResultsMsg(
+    results: Array<{ targetType: "CHANNEL" | "GROUP"; chatTarget: string; ok: boolean; error?: string }>,
+    lang: Language
+  ): string {
+    const lines = results.map((r) => {
+      const label = r.targetType === "CHANNEL" ? "📢 Channel" : "👥 Group";
+      if (r.ok) {
+        return `✅ <b>${label} (${escapeHtml(r.chatTarget)}):</b> ${lang === "AM" ? "በተሳካ ሁኔታ ተለጥፏል!" : "Posted successfully!"}`;
+      }
+      return `❌ <b>${label} (${escapeHtml(r.chatTarget || "-")}):</b> ${escapeHtml(r.error || "Failed")}`;
+    });
+    return lines.join("\n");
   }
 
   private async sendAdminStats(
@@ -1156,6 +1360,38 @@ class BotService {
   ): Promise<boolean> {
     if (user.role !== "SUPER_ADMIN") return false;
     const lang: Language = user.language || "AM";
+
+    if (state.step === "ADMIN_SET_CHANNEL_TARGET") {
+      const s = await getSystemSettings();
+      const cfg = this.parseChannelGroupConfig(s.channelUrl);
+      const val = text.toLowerCase() === "clear" ? "" : text.trim();
+      const nextCh = state.which === "CHANNEL" ? val : cfg.channelTarget;
+      const nextGr = state.which === "GROUP" ? val : cfg.groupTarget;
+      const combined = this.formatChannelGroupConfig(nextCh, nextGr);
+      await prisma.systemSettings.update({
+        where: { id: 1 },
+        data: { channelUrl: combined },
+      });
+      await this.setBotState(user.id, null);
+      await reply(
+        lang === "AM"
+          ? `✅ የ${state.which === "CHANNEL" ? "ቻናል" : "ግሩፕ"} ሊንክ ተቀምጧል!`
+          : `✅ ${state.which === "CHANNEL" ? "Channel" : "Group"} link saved!`
+      );
+      await this.sendAdminChannelPostPanel(reply, lang);
+      return true;
+    }
+
+    if (state.step === "ADMIN_CHANNEL_POST") {
+      const outcome = await this.postToChannelAndGroup({
+        target: state.target,
+        htmlText: escapeHtml(text),
+      });
+      await this.setBotState(user.id, null);
+      await reply(this.formatChannelPostResultsMsg(outcome.results, lang), { parse_mode: "HTML" });
+      await this.sendAdminChannelPostPanel(reply, lang);
+      return true;
+    }
 
     if (state.step === "ADMIN_EDIT_BANNER") {
       this.cachedBanner = null;
@@ -1646,12 +1882,13 @@ class BotService {
       }).catch(() => {});
 
       const startParam = typeof ctx.match === "string" ? ctx.match.trim() : "";
+      const isSpecialAction = startParam === "play" || startParam === "register";
       const user = await findOrCreateTelegramUser({
         telegramId: BigInt(ctx.from.id),
         firstName: ctx.from.first_name,
         lastName: ctx.from.last_name,
         username: ctx.from.username,
-        referralCodeUsed: startParam || undefined,
+        referralCodeUsed: !isSpecialAction && startParam ? startParam : undefined,
       });
 
       await this.setBotState(user.id, null);
@@ -1660,7 +1897,7 @@ class BotService {
         return;
       }
 
-      if (this.isAdminRole(user.role)) {
+      if (this.isAdminRole(user.role) && !isSpecialAction) {
         await ctx.reply(
           user.language === "AM"
             ? "🛡️ <b>የአድሚን ካሺየር ቦት</b>"
@@ -1685,6 +1922,22 @@ class BotService {
 
       if (await this.isBlockedByMaintenance(user, (t, opts) => ctx.reply(t, opts))) {
         return;
+      }
+
+      // When user clicks "🎮 Play Bingo" under a Channel/Group post (?start=play) or comes from Mini App to register (?start=register):
+      if (isSpecialAction) {
+        const lang: Language = user.language || "AM";
+        if (!user.language) {
+          await prisma.user.update({ where: { id: user.id }, data: { language: "AM" } });
+        }
+        if (!user.phoneNumber && !this.isAdminRole(user.role)) {
+          await this.sendRegisterRequired(ctx, lang);
+          return;
+        }
+        if (startParam === "play") {
+          await this.sendPlayPrompt(lang, (text, opts) => ctx.reply(text, opts));
+          return;
+        }
       }
 
       if (!user.language || !user.phoneNumber) {
@@ -2034,6 +2287,43 @@ class BotService {
         if (data === "adm:web_code") {
           await ctx.answerCallbackQuery();
           await this.sendAdminLoginCode(caller.id, adminLang, (t, opts) => ctx.reply(t, opts));
+          return;
+        }
+
+        if (data === "adm:channel_post") {
+          await this.setBotState(caller.id, null);
+          await ctx.answerCallbackQuery();
+          await this.sendAdminChannelPostPanel((t, opts) => ctx.reply(t, opts), adminLang);
+          return;
+        }
+
+        if (data.startsWith("adm:ch_set:")) {
+          const which = data.slice("adm:ch_set:".length) === "GROUP" ? "GROUP" : "CHANNEL";
+          await this.setBotState(caller.id, { step: "ADMIN_SET_CHANNEL_TARGET", which });
+          await ctx.answerCallbackQuery();
+          await ctx.reply(
+            adminLang === "AM"
+              ? `✏️ የ<b>${which === "CHANNEL" ? "ቻናሉን (Channel)" : "ግሩፑን (Group)"}</b> ሊንክ ወይም @username ይጻፉ (ለምሳሌ <code>https://t.me/zemen_bingo</code> ወይም <code>@zemen_bingo</code> ወይም <code>-100...</code>)፦`
+              : `✏️ Enter the <b>${which === "CHANNEL" ? "Channel" : "Group"}</b> link or @username (e.g. <code>https://t.me/zemen_bingo</code> or <code>@zemen_bingo</code>):`,
+            { parse_mode: "HTML", reply_markup: this.cancelKeyboard(adminLang) }
+          );
+          return;
+        }
+
+        if (data.startsWith("adm:ch_post:")) {
+          const targetRaw = data.slice("adm:ch_post:".length);
+          const target: "BOTH" | "CHANNEL" | "GROUP" =
+            targetRaw === "CHANNEL" ? "CHANNEL" : targetRaw === "GROUP" ? "GROUP" : "BOTH";
+          await this.setBotState(caller.id, { step: "ADMIN_CHANNEL_POST", target });
+          await ctx.answerCallbackQuery();
+          const targetAm =
+            target === "BOTH" ? "ለቻናሉ እና ለግሩፑ" : target === "CHANNEL" ? "ለቻናሉ" : "ለግሩፑ";
+          await ctx.reply(
+            adminLang === "AM"
+              ? `📝 አሁን <b>${targetAm}</b> የሚለጠፈውን <b>ጽሑፍ</b>፣ <b>ፎቶ (ከCaption ጋር)</b> ወይም <b>ቪዲዮ (ከCaption ጋር)</b> በቀጥታ እዚህ ይላኩ ወይም Paste ያድርጉ፦\n\n<i>(ከስሩ 🎮 ቢንጎ ተጫወት በተን በራሱ ይጨመራል)</i>`
+              : `📝 Now send or paste the <b>Text</b>, <b>Photo (with optional caption)</b>, or <b>Video (with optional caption)</b> to post:\n\n<i>(The 🎮 Play Bingo button will be attached automatically)</i>`,
+            { parse_mode: "HTML", reply_markup: this.cancelKeyboard(adminLang) }
+          );
           return;
         }
 
@@ -2618,6 +2908,20 @@ class BotService {
       const fileId = ctx.message.photo[ctx.message.photo.length - 1]?.file_id;
       const lang: Language = user.language || "AM";
 
+      if (this.isAdminRole(user.role) && state?.step === "ADMIN_CHANNEL_POST" && fileId) {
+        const caption = (ctx.message.caption || "").trim();
+        const outcome = await this.postToChannelAndGroup({
+          target: state.target,
+          mediaType: "photo",
+          mediaFileId: fileId,
+          htmlText: caption ? escapeHtml(caption) : "",
+        });
+        await this.setBotState(user.id, null);
+        await ctx.reply(this.formatChannelPostResultsMsg(outcome.results, lang), { parse_mode: "HTML" });
+        await this.sendAdminChannelPostPanel((t, opts) => ctx.reply(t, opts), lang);
+        return;
+      }
+
       if (user.role === "SUPER_ADMIN" && state?.step === "ADMIN_EDIT_BANNER" && fileId) {
         await prisma.systemSettings.update({
           where: { id: 1 },
@@ -2683,6 +2987,29 @@ class BotService {
         }
         await this.setBotState(user.id, null);
         await ctx.reply(`❌ ${code}`);
+      }
+    });
+
+    // Video handler: Admin Channel & Group Video Post
+    bot.on("message:video", async (ctx) => {
+      if (!ctx.from) return;
+      const user = await prisma.user.findUnique({ where: { telegramId: BigInt(ctx.from.id) } });
+      if (!user || user.isBanned || !this.isAdminRole(user.role)) return;
+      const state = user.botState as BotConvState;
+      const fileId = ctx.message.video?.file_id;
+      const lang: Language = user.language || "AM";
+
+      if (state?.step === "ADMIN_CHANNEL_POST" && fileId) {
+        const caption = (ctx.message.caption || "").trim();
+        const outcome = await this.postToChannelAndGroup({
+          target: state.target,
+          mediaType: "video",
+          mediaFileId: fileId,
+          htmlText: caption ? escapeHtml(caption) : "",
+        });
+        await this.setBotState(user.id, null);
+        await ctx.reply(this.formatChannelPostResultsMsg(outcome.results, lang), { parse_mode: "HTML" });
+        await this.sendAdminChannelPostPanel((t, opts) => ctx.reply(t, opts), lang);
       }
     });
 

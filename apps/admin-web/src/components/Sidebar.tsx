@@ -9,6 +9,7 @@ import {
   ReceiptText,
   Landmark,
   Megaphone,
+  Share2,
   Settings,
   ShieldCheck,
   LogOut,
@@ -83,6 +84,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: "System",
       items: [
         { id: "broadcast", label: "Broadcasts", icon: Megaphone, superAdminOnly: true },
+        { id: "channel_post", label: "Channel & Group Post", icon: Share2, superAdminOnly: true },
         { id: "settings", label: "Settings & Auth", icon: Settings },
         { id: "audit", label: "Audit Logs", icon: ShieldCheck },
       ],

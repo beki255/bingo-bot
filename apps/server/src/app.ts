@@ -187,7 +187,7 @@ export function createApp() {
         ok: true,
         balance,
         phoneNumber: user.phoneNumber,
-        isVerified: Boolean(user.phoneNumber),
+        isVerified: Boolean(user.phoneNumber || user.role === "SUPER_ADMIN" || user.role === "CASHIER"),
         firstName: user.firstName,
         username: user.username,
         language: user.language || "AM",
