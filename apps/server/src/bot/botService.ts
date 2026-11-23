@@ -170,10 +170,18 @@ class BotService {
     this.io = io;
   }
 
-  async sendSafeMessage(telegramId: bigint | string, text: string) {
+  async sendSafeMessage(
+    telegramId: bigint | string,
+    text: string,
+    options?: { withPlayButton?: boolean }
+  ) {
     if (!this.bot) return;
     try {
-      await this.bot.api.sendMessage(telegramId.toString(), text, { parse_mode: "HTML" });
+      const kb = options?.withPlayButton ? this.getBroadcastPlayKeyboard() : undefined;
+      await this.bot.api.sendMessage(telegramId.toString(), text, {
+        parse_mode: "HTML",
+        ...(kb ? { reply_markup: kb } : {}),
+      });
     } catch (err) {
       console.error(`Failed to send Telegram message to ${telegramId}:`, err);
     }
@@ -2741,7 +2749,8 @@ class BotService {
               res.user.telegramId,
               uLang === "AM"
                 ? `✅ የ<b>${res.deposit.amount.toString()} ብር</b> Deposit ጥያቄዎ ጸድቋል! ሂሳብዎ ወደ Wallet-ዎ ገብቷል።`
-                : `✅ Your deposit of <b>${res.deposit.amount.toString()} ETB</b> has been approved!`
+                : `✅ Your deposit of <b>${res.deposit.amount.toString()} ETB</b> has been approved!`,
+              { withPlayButton: true }
             );
             if (res.referralBonus && res.referralBonus.bonusAmount > 0) {
               const referrer = await prisma.user.findUnique({
@@ -2753,7 +2762,8 @@ class BotService {
                   referrer.telegramId,
                   rLang === "AM"
                     ? `🎁 የጋበዙት ተጫዋች (<b>${escapeHtml(res.user.firstName)}</b>) Deposit ስላደረገ የ<b>${res.referralBonus.bonusAmount} ብር</b> የግብዣ ቦነስ ወደ Wallet-ዎ ገብቷል!`
-                    : `🎁 You earned <b>${res.referralBonus.bonusAmount} ETB</b> referral bonus from <b>${escapeHtml(res.user.firstName)}</b>'s deposit!`
+                    : `🎁 You earned <b>${res.referralBonus.bonusAmount} ETB</b> referral bonus from <b>${escapeHtml(res.user.firstName)}</b>'s deposit!`,
+                  { withPlayButton: true }
                 );
               }
             }
@@ -2813,7 +2823,8 @@ class BotService {
               res.user.telegramId,
               uLang === "AM"
                 ? `✅ የ<b>${res.withdraw.amount.toString()} ብር</b> Withdraw ክፍያዎ ተልኳል!`
-                : `✅ Your withdrawal of <b>${res.withdraw.amount.toString()} ETB</b> has been paid!`
+                : `✅ Your withdrawal of <b>${res.withdraw.amount.toString()} ETB</b> has been paid!`,
+              { withPlayButton: true }
             );
           } catch (err) {
             await ctx.answerCallbackQuery({

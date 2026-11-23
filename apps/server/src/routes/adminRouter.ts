@@ -1063,7 +1063,8 @@ export function createAdminRouter() {
         result.user.telegramId,
         uLang === "AM"
           ? `✅ የ<b>${result.deposit.amount.toString()} ብር</b> Deposit ጥያቄዎ ጸድቋል! ሂሳብዎ ወደ Wallet-ዎ ገብቷል።`
-          : `✅ Your deposit of <b>${result.deposit.amount.toString()} ETB</b> has been approved!`
+          : `✅ Your deposit of <b>${result.deposit.amount.toString()} ETB</b> has been approved!`,
+        { withPlayButton: true }
       );
 
       if (result.referralBonus && result.referralBonus.bonusAmount > 0) {
@@ -1076,7 +1077,8 @@ export function createAdminRouter() {
             referrer.telegramId,
             rLang === "AM"
               ? `🎁 የጋበዙት ተጫዋች (<b>${escapeHtml(result.user.firstName)}</b>) Deposit ስላደረገ የ<b>${result.referralBonus.bonusAmount} ብር</b> የግብዣ ቦነስ ወደ Wallet-ዎ ገብቷል!`
-              : `🎁 You earned <b>${result.referralBonus.bonusAmount} ETB</b> referral bonus from <b>${escapeHtml(result.user.firstName)}</b>'s deposit!`
+              : `🎁 You earned <b>${result.referralBonus.bonusAmount} ETB</b> referral bonus from <b>${escapeHtml(result.user.firstName)}</b>'s deposit!`,
+            { withPlayButton: true }
           );
         }
       }
@@ -1223,7 +1225,8 @@ export function createAdminRouter() {
         result.user.telegramId,
         uLang === "AM"
           ? `✅ የ<b>${result.withdraw.amount.toString()} ብር</b> Withdraw ክፍያዎ ተልኳል!${payoutReference ? `\n🔖 Ref: <code>${escapeHtml(payoutReference)}</code>` : ""}`
-          : `✅ Your withdrawal of <b>${result.withdraw.amount.toString()} ETB</b> has been paid!${payoutReference ? `\n🔖 Ref: <code>${escapeHtml(payoutReference)}</code>` : ""}`
+          : `✅ Your withdrawal of <b>${result.withdraw.amount.toString()} ETB</b> has been paid!${payoutReference ? `\n🔖 Ref: <code>${escapeHtml(payoutReference)}</code>` : ""}`,
+        { withPlayButton: true }
       );
 
       res.json({ ok: true });
