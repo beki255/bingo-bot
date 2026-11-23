@@ -95,6 +95,17 @@ export function createApp() {
 
   app.post("/api/rooms/:id/select", async (req, res) => {
     try {
+      const { getSystemSettings } = await import("./services/walletService.js");
+      const settings = await getSystemSettings();
+      if (settings.maintenanceMode) {
+        return res.status(503).json({
+          ok: false,
+          error: "MAINTENANCE_MODE",
+          maintenanceMode: true,
+          maintenanceMessageAm: settings.maintenanceMessageAm,
+          maintenanceMessageEn: settings.maintenanceMessageEn,
+        });
+      }
       const { clientId, cards } = req.body;
       if (!clientId) {
         return res.status(400).json({ ok: false, error: "MISSING_CLIENT_ID" });
@@ -109,6 +120,17 @@ export function createApp() {
 
   app.post("/api/rooms/:id/buy", async (req, res) => {
     try {
+      const { getSystemSettings } = await import("./services/walletService.js");
+      const settings = await getSystemSettings();
+      if (settings.maintenanceMode) {
+        return res.status(503).json({
+          ok: false,
+          error: "MAINTENANCE_MODE",
+          maintenanceMode: true,
+          maintenanceMessageAm: settings.maintenanceMessageAm,
+          maintenanceMessageEn: settings.maintenanceMessageEn,
+        });
+      }
       const { gameRoundService } = await import("./services/gameRoundService.js");
       const { telegramId, cartelaNumbers } = req.body;
       if (!telegramId || !cartelaNumbers || !Array.isArray(cartelaNumbers)) {
@@ -169,9 +191,16 @@ export function createApp() {
 
   app.get("/api/wallet/balance", async (req, res) => {
     try {
+      const { getSystemSettings, centsToNumber, toCents } = await import("./services/walletService.js");
+      const settings = await getSystemSettings();
+      const maintenancePayload = {
+        maintenanceMode: settings.maintenanceMode,
+        maintenanceMessageAm: settings.maintenanceMessageAm,
+        maintenanceMessageEn: settings.maintenanceMessageEn,
+      };
       const telegramId = req.query.telegramId ? String(req.query.telegramId) : null;
       if (!telegramId) {
-        return res.json({ ok: true, balance: 0, phoneNumber: null, isVerified: false });
+        return res.json({ ok: true, balance: 0, phoneNumber: null, isVerified: false, ...maintenancePayload });
       }
       const { prisma } = await import("./db/prisma.js");
       const user = await prisma.user.findUnique({
@@ -179,9 +208,8 @@ export function createApp() {
         include: { wallet: true },
       });
       if (!user || !user.wallet) {
-        return res.json({ ok: true, balance: 0, phoneNumber: null, isVerified: false });
+        return res.json({ ok: true, balance: 0, phoneNumber: null, isVerified: false, ...maintenancePayload });
       }
-      const { centsToNumber, toCents } = await import("./services/walletService.js");
       const balance = centsToNumber(toCents(user.wallet.balance));
       return res.json({
         ok: true,
@@ -191,6 +219,7 @@ export function createApp() {
         firstName: user.firstName,
         username: user.username,
         language: user.language || "AM",
+        ...maintenancePayload,
       });
     } catch (err) {
       return res.json({ ok: true, balance: 0, phoneNumber: null, isVerified: false });
@@ -390,6 +419,9 @@ export function createApp() {
           supportUsername: settings.supportUsername,
           instructionAm: settings.instructionAm,
           instructionEn: settings.instructionEn,
+          maintenanceMode: settings.maintenanceMode,
+          maintenanceMessageAm: settings.maintenanceMessageAm,
+          maintenanceMessageEn: settings.maintenanceMessageEn,
         },
       });
     } catch (err) {

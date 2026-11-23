@@ -12,6 +12,12 @@ export interface AdminEvent {
   payload?: any;
 }
 
+export interface MaintenanceUpdateEvent {
+  maintenanceMode: boolean;
+  maintenanceMessageAm: string;
+  maintenanceMessageEn: string;
+}
+
 class RealtimeService {
   private io?: SocketIOServer;
 
@@ -42,6 +48,11 @@ class RealtimeService {
   notifyAdminEvent(event: AdminEvent) {
     if (!this.io) return;
     this.io.to("admin_monitor").emit("admin_event", event);
+  }
+
+  notifyMaintenanceUpdate(data: MaintenanceUpdateEvent) {
+    if (!this.io) return;
+    this.io.emit("maintenance_update", data);
   }
 }
 

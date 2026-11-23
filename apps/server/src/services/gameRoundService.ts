@@ -6,6 +6,7 @@ import {
   centsToDecimal,
   deductBetTx,
   creditWinTx,
+  getSystemSettings,
 } from "./walletService.js";
 import { realtimeService } from "./realtimeService.js";
 import { generateDeterministicCartela, type BingoLetter } from "@bingo/shared";
@@ -204,8 +205,19 @@ export class GameRoundService {
         });
       });
 
-      socket.on("select_cards", (data: { roomId: string; clientId: string; cards: number[] }) => {
+      socket.on("select_cards", async (data: { roomId: string; clientId: string; cards: number[] }) => {
         if (!data?.roomId) return;
+        try {
+          const settings = await getSystemSettings();
+          if (settings.maintenanceMode) {
+            socket.emit("maintenance_update", {
+              maintenanceMode: true,
+              maintenanceMessageAm: settings.maintenanceMessageAm,
+              maintenanceMessageEn: settings.maintenanceMessageEn,
+            });
+            return;
+          }
+        } catch {}
         this.setClientSelection(data.roomId, data.clientId || currentClient, data.cards || []);
       });
 
@@ -453,6 +465,11 @@ export class GameRoundService {
     const { roomId, telegramId, cartelaNumbers } = input;
     if (!cartelaNumbers || cartelaNumbers.length === 0) {
       throw new Error("NO_CARDS_SELECTED");
+    }
+
+    const settings = await getSystemSettings();
+    if (settings.maintenanceMode) {
+      throw new Error("MAINTENANCE_MODE");
     }
 
     let user = await prisma.user.findUnique({

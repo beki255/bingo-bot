@@ -1943,6 +1943,12 @@ export function createAdminRouter() {
         data: parsed.data,
       });
 
+      realtimeService.notifyMaintenanceUpdate({
+        maintenanceMode: updated.maintenanceMode,
+        maintenanceMessageAm: updated.maintenanceMessageAm,
+        maintenanceMessageEn: updated.maintenanceMessageEn,
+      });
+
       await recordAuditLog(prisma, {
         actorId: req.admin!.id,
         actorRole: req.admin!.role,

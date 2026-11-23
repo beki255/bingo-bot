@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { io } from "socket.io-client";
-import { HelpCircle, Play, AlertCircle } from "lucide-react";
+import { HelpCircle, Play, AlertCircle, Wrench, RefreshCw } from "lucide-react";
 import { API_BASE_URL } from "./config.js";
 import { RulesScreen } from "./components/RulesScreen.js";
 import { BottomNav, type TabType } from "./components/BottomNav.js";
@@ -56,6 +56,14 @@ export default function App() {
   const [userLang, setUserLang] = useState<"AM" | "EN">(() => {
     return (localStorage.getItem("bingo_user_lang") as "AM" | "EN") || "AM";
   });
+
+  // System Maintenance Mode (Killswitch) state synced from backend & real-time socket
+  const [maintenance, setMaintenance] = useState<{
+    enabled: boolean;
+    messageAm: string;
+    messageEn: string;
+  }>({ enabled: false, messageAm: "", messageEn: "" });
+  const [isCheckingMaintenance, setIsCheckingMaintenance] = useState(false);
 
   // Native Telegram WebApp SDK initialization
   useEffect(() => {
@@ -143,6 +151,25 @@ export default function App() {
     { id: "20", nameAm: "መደብ 20", nameEn: "Play 20", stakeAmount: 20 },
   ]);
 
+  const fetchMaintenanceStatus = async () => {
+    setIsCheckingMaintenance(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/settings`);
+      const data = await res.json();
+      if (data.ok && data.settings) {
+        setMaintenance({
+          enabled: Boolean(data.settings.maintenanceMode),
+          messageAm: data.settings.maintenanceMessageAm || "",
+          messageEn: data.settings.maintenanceMessageEn || "",
+        });
+      }
+    } catch {
+      // ignore network error
+    } finally {
+      setIsCheckingMaintenance(false);
+    }
+  };
+
   const handleRefreshUserData = async () => {
     const tgId = getTelegramId();
     if (!tgId) return;
@@ -150,6 +177,13 @@ export default function App() {
       const res = await fetch(`${API_BASE_URL}/api/wallet/balance?telegramId=${tgId}`);
       const data = await res.json();
       if (data.ok) {
+        if (typeof data.maintenanceMode === "boolean") {
+          setMaintenance({
+            enabled: data.maintenanceMode,
+            messageAm: data.maintenanceMessageAm || "",
+            messageEn: data.maintenanceMessageEn || "",
+          });
+        }
         if (typeof data.balance === "number") {
           updateBalance(data.balance);
         }
@@ -205,13 +239,27 @@ export default function App() {
       }
     });
 
+    s.on(
+      "maintenance_update",
+      (data: { maintenanceMode: boolean; maintenanceMessageAm?: string; maintenanceMessageEn?: string }) => {
+        if (typeof data?.maintenanceMode === "boolean") {
+          setMaintenance({
+            enabled: data.maintenanceMode,
+            messageAm: data.maintenanceMessageAm || "",
+            messageEn: data.maintenanceMessageEn || "",
+          });
+        }
+      }
+    );
+
     return () => {
       s.disconnect();
     };
   }, []);
 
-  // Fetch live rooms & Telegram user balance
+  // Fetch live rooms, maintenance status & Telegram user balance
   useEffect(() => {
+    fetchMaintenanceStatus();
     fetch(`${API_BASE_URL}/api/rooms`)
       .then((res) => res.json())
       .then((data) => {
@@ -272,6 +320,62 @@ export default function App() {
 
   const isRealTelegramWebAppUser = Boolean(getTelegramUser()?.id);
   const mustRegisterInBotFirst = isRealTelegramWebAppUser && hasCheckedRegistration && !isVerified;
+
+  if (maintenance.enabled) {
+    const customMsg =
+      userLang === "AM" ? maintenance.messageAm.trim() : maintenance.messageEn.trim();
+    const displayMsg =
+      customMsg ||
+      (userLang === "AM"
+        ? "🚧 ሲስተሙ ለአጭር ጊዜ በጥገና ላይ ነው። እባክዎ ከጥቂት ደቂቃዎች በኋላ እንደገና ይሞክሩ።"
+        : "🚧 System is currently under maintenance. Please check back in a few minutes.");
+
+    const handleCloseMiniApp = () => {
+      const tg = typeof window !== "undefined" ? (window as any).Telegram?.WebApp : null;
+      if (tg?.close) {
+        tg.close();
+      } else {
+        window.close();
+      }
+    };
+
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-white bg-[#0c0d1c] text-center animate-fadeIn">
+        <div className="w-full max-w-sm bg-[#141733] border border-rose-500/35 rounded-3xl p-6 shadow-2xl flex flex-col items-center gap-4">
+          <div className="w-16 h-16 rounded-full bg-rose-500/20 border-2 border-rose-400 flex items-center justify-center text-rose-400 shadow-lg shadow-rose-500/20">
+            <Wrench className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-black text-white">
+            {userLang === "AM" ? "🚧 ሲስተሙ በጥገና ላይ ነው" : "🚧 Under Maintenance"}
+          </h2>
+          <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-line">
+            {displayMsg}
+          </p>
+          <div className="w-full flex flex-col gap-2.5 mt-2">
+            <button
+              type="button"
+              disabled={isCheckingMaintenance}
+              onClick={() => {
+                fetchMaintenanceStatus();
+                handleRefreshUserData();
+              }}
+              className="w-full py-3 px-5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-black font-black text-sm shadow-lg shadow-amber-500/25 active:scale-95 transition flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              <RefreshCw className={`w-4 h-4 ${isCheckingMaintenance ? "animate-spin" : ""}`} />
+              <span>{userLang === "AM" ? "እንደገና ሞክር" : "Check Again"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleCloseMiniApp}
+              className="w-full py-2.5 px-5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-gray-200 font-bold text-xs active:scale-95 transition"
+            >
+              {userLang === "AM" ? "✖️ ዝጋ" : "✖️ Close"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (mustRegisterInBotFirst) {
     const handleGoToBotRegister = () => {

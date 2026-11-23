@@ -10,6 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { env } from "../config/env.js";
 import { prisma } from "../db/prisma.js";
 import { recordAuditLog } from "../services/auditService.js";
+import { realtimeService } from "../services/realtimeService.js";
 import {
   approveDepositRequest,
   createWithdrawRequest,
@@ -1668,7 +1669,14 @@ class BotService {
       }
 
       const updateData = { [state.field]: value } as Prisma.SystemSettingsUpdateInput;
-      await prisma.systemSettings.update({ where: { id: 1 }, data: updateData });
+      const updatedSettings = await prisma.systemSettings.update({ where: { id: 1 }, data: updateData });
+      if (state.field === "maintenanceMessageAm" || state.field === "maintenanceMessageEn") {
+        realtimeService.notifyMaintenanceUpdate({
+          maintenanceMode: updatedSettings.maintenanceMode,
+          maintenanceMessageAm: updatedSettings.maintenanceMessageAm,
+          maintenanceMessageEn: updatedSettings.maintenanceMessageEn,
+        });
+      }
       await recordAuditLog(prisma, {
         actorId: user.id,
         actorRole: "SUPER_ADMIN",
@@ -2682,10 +2690,17 @@ class BotService {
           }
           const current = await getSystemSettings();
           const nextVal = !current[field];
-          await prisma.systemSettings.update({
+          const updatedToggle = await prisma.systemSettings.update({
             where: { id: 1 },
             data: { [field]: nextVal } as Prisma.SystemSettingsUpdateInput,
           });
+          if (field === "maintenanceMode") {
+            realtimeService.notifyMaintenanceUpdate({
+              maintenanceMode: updatedToggle.maintenanceMode,
+              maintenanceMessageAm: updatedToggle.maintenanceMessageAm,
+              maintenanceMessageEn: updatedToggle.maintenanceMessageEn,
+            });
+          }
           await recordAuditLog(prisma, {
             actorId: caller.id,
             actorRole: caller.role,
