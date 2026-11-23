@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { ArrowLeft, RotateCw, Check, AlertCircle, X, Users, Eye } from "lucide-react";
+import { ArrowLeft, RotateCw, Check, AlertCircle, X, Users, Eye, Sparkles } from "lucide-react";
 import { io, Socket } from "socket.io-client";
+import { generateDeterministicCartela } from "@bingo/shared";
 import { API_BASE_URL } from "../config.js";
 
 interface CartelaBoardProps {
@@ -35,6 +36,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
   onConfirmPlay,
 }) => {
   const [selectedCards, setSelectedCards] = useState<number[]>([]);
+  const [activePreviewIndex, setActivePreviewIndex] = useState<number>(0);
   const [registeredCards, setRegisteredCards] = useState<number[]>([]);
   const [otherPendingSelections, setOtherPendingSelections] = useState<number[]>([]);
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -45,6 +47,18 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
   // Active playing cards currently selected by the user
   const activeUserCards = selectedCards;
   const isUserPlaying = activeUserCards.length > 0;
+
+  const safePreviewIdx = activePreviewIndex < selectedCards.length ? activePreviewIndex : 0;
+  const activePreviewCardNo = selectedCards[safePreviewIdx] ?? null;
+
+  const previewGrid = useMemo(() => {
+    if (!activePreviewCardNo) return null;
+    try {
+      return generateDeterministicCartela(activePreviewCardNo);
+    } catch {
+      return null;
+    }
+  }, [activePreviewCardNo]);
 
   // Countdown starts when at least minPlayers cards are registered
   const [isCountdownRunning, setIsCountdownRunning] = useState(false);
@@ -341,6 +355,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
       const next = selectedCards.filter((c) => c !== num);
       setSelectedCards(next);
       selectedCardsRef.current = next;
+      setActivePreviewIndex(0);
       syncCardSelectionToServer(next);
       return;
     }
@@ -364,6 +379,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
     const next = [...selectedCards, num];
     setSelectedCards(next);
     selectedCardsRef.current = next;
+    setActivePreviewIndex(next.length - 1);
     syncCardSelectionToServer(next);
   };
 
@@ -475,8 +491,8 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
         </div>
       )}
 
-      {/* Cartela Selection Grid (8 Columns Scrollable) */}
-      <div className="flex-1 overflow-y-auto px-2 py-3 bg-[#0a0c1b]/60 pb-16">
+      {/* Cartela Selection Grid (8 Columns Scrollable) + Selected Card 5x5 Preview below the 600 numbers */}
+      <div className="flex-1 overflow-y-auto px-2 py-3 bg-[#0a0c1b]/60 pb-24">
         <div className="grid grid-cols-8 gap-1.5">
           {Array.from({ length: cartelaPoolSize }, (_, i) => i + 1).map((num) => {
             const isTaken = takenCardsSet.has(num);
@@ -504,6 +520,78 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
             );
           })}
         </div>
+
+        {/* 5x5 Selected Cartela Board Preview (displayed directly below the 1-600 numbers, with multi-card switcher like in LiveGame) */}
+        {selectedCards.length > 0 && activePreviewCardNo && previewGrid && (
+          <div className="mt-6 pt-4 border-t border-white/15 animate-fadeIn">
+            <div className="bg-[#12142d] border border-amber-400/40 rounded-2xl p-3.5 shadow-2xl max-w-[330px] mx-auto">
+              <div className="flex items-center justify-between mb-2.5">
+                <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                  <span>🃏 ካርቴላ #{activePreviewCardNo} (Card Preview)</span>
+                </span>
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  ✅ የተመረጠ ({selectedCards.length})
+                </span>
+              </div>
+
+              <div className="bg-[#0f1124] p-2 rounded-xl border border-white/10">
+                <div className="grid grid-cols-5 gap-1 mb-1.5 text-center font-black text-xs">
+                  <div className="bg-[#0088ff] text-white py-1 rounded">B</div>
+                  <div className="bg-[#5c2bff] text-white py-1 rounded">I</div>
+                  <div className="bg-[#9c27b0] text-white py-1 rounded">N</div>
+                  <div className="bg-[#00c853] text-black py-1 rounded">G</div>
+                  <div className="bg-[#ff6d00] text-white py-1 rounded">O</div>
+                </div>
+
+                <div className="grid grid-cols-5 gap-1">
+                  {previewGrid.map((row: number[], rIdx: number) =>
+                    row.map((val: number, cIdx: number) => {
+                      const isCenter = rIdx === 2 && cIdx === 2;
+                      return (
+                        <div
+                          key={`${rIdx}-${cIdx}`}
+                          className={`h-8 rounded-lg flex items-center justify-center text-xs font-extrabold ${
+                            isCenter
+                              ? "bg-[#00e676] text-black shadow-[0_0_8px_rgba(0,230,118,0.7)]"
+                              : "bg-white text-gray-900"
+                          }`}
+                        >
+                          {isCenter ? <Sparkles className="w-4 h-4 fill-amber-300 text-amber-500" /> : val}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Cartela Switcher Pills (Just like LiveGame when 2+ cards are selected) */}
+              <div className="mt-3 flex items-center justify-center gap-2">
+                {selectedCards.length > 1 ? (
+                  <div className="flex flex-wrap items-center justify-center gap-1.5">
+                    {selectedCards.map((cNum, idx) => (
+                      <button
+                        key={cNum}
+                        type="button"
+                        onClick={() => setActivePreviewIndex(idx)}
+                        className={`px-3 py-1 rounded-full text-xs font-extrabold transition ${
+                          safePreviewIdx === idx
+                            ? "bg-amber-400 text-black shadow-md scale-105"
+                            : "bg-white/10 text-gray-300 hover:text-white border border-white/10"
+                        }`}
+                      >
+                        Cartela #{cNum}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-3.5 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-amber-400">
+                    Cartela No: {activePreviewCardNo}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
