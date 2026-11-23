@@ -89,7 +89,8 @@ export const LiveGame: React.FC<LiveGameProps> = ({
   const houseCut = (houseCutPercent ?? 20) / 100;
   const derash = serverDerash ?? Math.floor(totalCardsCount * stake * (1 - houseCut));
 
-  const [isAutomatic, setIsAutomatic] = useState(true);
+  // Locked to Automatic mode for now (kept as state so manual toggle can easily be re-enabled later)
+  const [isAutomatic] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     try {
       return localStorage.getItem("bingo_sound_enabled") !== "false";
@@ -824,22 +825,17 @@ export const LiveGame: React.FC<LiveGameProps> = ({
               </span>
             </div>
 
-            {/* Automatic Toggle Switch */}
+            {/* Automatic Toggle Switch (Locked ON in Automatic-only mode; non-clickable, normal green appearance) */}
             <div className="w-full flex items-center justify-between px-2 pt-1 border-t border-white/5 mt-1">
               <span className="text-xs font-bold text-gray-300">Automatic</span>
-              <button
-                onClick={() => !isWatchingOnly && setIsAutomatic(!isAutomatic)}
-                disabled={isWatchingOnly}
-                className={`w-10 h-5 rounded-full p-0.5 transition-colors duration-200 ${
-                  isAutomatic ? "bg-emerald-500" : "bg-gray-600"
-                } ${isWatchingOnly ? "opacity-80" : ""}`}
+              <div
+                role="switch"
+                aria-checked={true}
+                aria-disabled="true"
+                className="w-10 h-5 rounded-full p-0.5 bg-emerald-500 pointer-events-none select-none"
               >
-                <div
-                  className={`w-4 h-4 rounded-full bg-white transition-transform duration-200 ${
-                    isAutomatic ? "translate-x-5" : "translate-x-0"
-                  }`}
-                />
-              </button>
+                <div className="w-4 h-4 rounded-full bg-white translate-x-5" />
+              </div>
             </div>
           </div>
 
@@ -953,8 +949,13 @@ export const LiveGame: React.FC<LiveGameProps> = ({
         </button>
 
         <button
-          onClick={handleBingoClick}
-          disabled={isWatchingOnly}
+          type="button"
+          onClick={() => {
+            if (!isAutomatic && !isWatchingOnly) {
+              handleBingoClick();
+            }
+          }}
+          disabled={isWatchingOnly || isAutomatic}
           className={`col-span-2 py-3 rounded-xl font-black text-sm flex items-center justify-center gap-1.5 transition shadow-lg ${
             isWatchingOnly
               ? "bg-[#5d4037]/70 text-[#a1887f] cursor-default font-extrabold"
