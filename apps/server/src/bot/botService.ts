@@ -2188,7 +2188,8 @@ class BotService {
         await ctx.reply(
           lang === "AM"
             ? `✅ አስቀድመው በስልክ ቁጥር (${user.phoneNumber}) ተመዝግበዋል!`
-            : `✅ You are already registered with ${user.phoneNumber}!`
+            : `✅ You are already registered with ${user.phoneNumber}!`,
+          { reply_markup: this.getBroadcastPlayKeyboard() }
         );
         return;
       }
@@ -3020,7 +3021,8 @@ class BotService {
           await ctx.reply(
             lang === "AM"
               ? `✅ አስቀድመው ተመዝግበዋል (${caller.phoneNumber})`
-              : `✅ Already registered (${caller.phoneNumber})`
+              : `✅ Already registered (${caller.phoneNumber})`,
+            { reply_markup: this.getBroadcastPlayKeyboard() }
           );
         } else {
           await this.sendRegisterRequired(ctx, lang);
