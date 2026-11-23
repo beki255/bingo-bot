@@ -2302,7 +2302,12 @@ class BotService {
       if (!user) return;
       await this.setBotState(user.id, null);
       const lang: Language = user.language || "AM";
-      await ctx.reply(lang === "AM" ? "❌ ተሰርዟል።" : "❌ Cancelled.");
+      const backKb = this.isAdminRole(user.role)
+        ? new InlineKeyboard().text(lang === "AM" ? "⬅️ ተመለስ (Back)" : "⬅️ Back", "adm:home")
+        : this.backToHomeKeyboard(lang);
+      await ctx.reply(lang === "AM" ? "❌ ተሰርዟል።" : "❌ Cancelled.", {
+        reply_markup: backKb,
+      });
     });
 
     // Admin commands: /adminlogin, /stats, /broadcast
@@ -2438,7 +2443,12 @@ class BotService {
         const cancelLang: Language = caller.language || "AM";
         await this.setBotState(caller.id, null);
         await ctx.answerCallbackQuery({ text: cancelLang === "AM" ? "ተሰርዟል" : "Cancelled" });
-        await ctx.reply(cancelLang === "AM" ? "❌ ተሰርዟል።" : "❌ Cancelled.");
+        const backKb = this.isAdminRole(caller.role)
+          ? new InlineKeyboard().text(cancelLang === "AM" ? "⬅️ ተመለስ (Back)" : "⬅️ Back", "adm:home")
+          : this.backToHomeKeyboard(cancelLang);
+        await ctx.reply(cancelLang === "AM" ? "❌ ተሰርዟል።" : "❌ Cancelled.", {
+          reply_markup: backKb,
+        });
         return;
       }
 
