@@ -1050,6 +1050,7 @@ export function createAdminRouter() {
         note
       );
 
+      await botService.resolvePendingUserStatusMessage("DEPOSIT", depositId, "APPROVED");
       await botService.syncAdminMessageResolution(
         result.deposit.adminMessageIds,
         `✅ <b>APPROVED (Web)</b> by ${escapeHtml(req.admin!.firstName)}\n👤 ${escapeHtml(result.user.firstName)} | 💵 ${result.deposit.amount.toString()} ETB\n🔖 <code>${escapeHtml(result.deposit.transactionRef)}</code>`,
@@ -1102,6 +1103,7 @@ export function createAdminRouter() {
         reason
       );
 
+      await botService.resolvePendingUserStatusMessage("DEPOSIT", depositId, "REJECTED");
       await botService.syncAdminMessageResolution(
         result.deposit.adminMessageIds,
         `❌ <b>REJECTED (Web)</b> by ${escapeHtml(req.admin!.firstName)}\n👤 ${escapeHtml(result.user.firstName)} | 💵 ${result.deposit.amount.toString()} ETB\n📝 ${escapeHtml(reason)}`,
@@ -1208,6 +1210,7 @@ export function createAdminRouter() {
         note
       );
 
+      await botService.resolvePendingUserStatusMessage("WITHDRAW", withdrawId, "PAID");
       await botService.syncAdminMessageResolution(
         result.withdraw.adminMessageIds,
         `✅ <b>PAID (Web)</b> by ${escapeHtml(req.admin!.firstName)}\n👤 ${escapeHtml(result.user.firstName)} | 💵 ${result.withdraw.amount.toString()} ETB${payoutReference ? `\n🔖 <code>${escapeHtml(payoutReference)}</code>` : ""}`,
@@ -1245,6 +1248,7 @@ export function createAdminRouter() {
         reason
       );
 
+      await botService.resolvePendingUserStatusMessage("WITHDRAW", withdrawId, "REJECTED");
       await botService.syncAdminMessageResolution(
         result.withdraw.adminMessageIds,
         `❌ <b>REJECTED & REFUNDED (Web)</b> by ${escapeHtml(req.admin!.firstName)}\n👤 ${escapeHtml(result.user.firstName)} | 💵 ${result.withdraw.amount.toString()} ETB\n📝 ${escapeHtml(reason)}`,

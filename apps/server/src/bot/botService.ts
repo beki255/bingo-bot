@@ -110,6 +110,41 @@ interface AdminMsgRef {
   messageId: number;
 }
 
+interface PendingUserStatusTracker {
+  kind: "DEPOSIT" | "WITHDRAW";
+  requestId: string;
+  chatId: string;
+  messageId: number;
+  baseHtml: string;
+  lang: Language;
+  frameIndex: number;
+  timer: ReturnType<typeof setInterval>;
+}
+
+const VERIFYING_FRAMES_AM = [
+  "🔄 በማረጋገጥ ላይ •○○ (Verifying...)",
+  "⏳ በማረጋገጥ ላይ ••○ (Verifying...)",
+  "🔄 በማረጋገጥ ላይ ••• (Verifying...)",
+];
+
+const VERIFYING_FRAMES_EN = [
+  "🔄 Verifying •○○ (Please wait...)",
+  "⏳ Verifying ••○ (Please wait...)",
+  "🔄 Verifying ••• (Please wait...)",
+];
+
+const PROCESSING_FRAMES_AM = [
+  "🔄 በሂደት ላይ •○○ (Processing...)",
+  "⏳ በሂደት ላይ ••○ (Processing...)",
+  "🔄 በሂደት ላይ ••• (Processing...)",
+];
+
+const PROCESSING_FRAMES_EN = [
+  "🔄 Processing •○○ (Please wait...)",
+  "⏳ Processing ••○ (Please wait...)",
+  "🔄 Processing ••• (Please wait...)",
+];
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -125,6 +160,7 @@ class BotService {
   private isStopped = false;
   private lastPollingError: string | null = null;
   private botInfo: any = null;
+  private pendingUserTrackers = new Map<string, PendingUserStatusTracker>();
 
   private isAdminRole(role: string): boolean {
     return role === "SUPER_ADMIN" || role === "CASHIER";
@@ -153,6 +189,144 @@ class BotService {
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : "SEND_FAILED" };
+    }
+  }
+
+  private getPendingStatusKeyboard(
+    kind: "DEPOSIT" | "WITHDRAW",
+    requestId: string,
+    lang: Language,
+    frameIndex: number
+  ): InlineKeyboard {
+    const frames =
+      kind === "DEPOSIT"
+        ? lang === "AM"
+          ? VERIFYING_FRAMES_AM
+          : VERIFYING_FRAMES_EN
+        : lang === "AM"
+        ? PROCESSING_FRAMES_AM
+        : PROCESSING_FRAMES_EN;
+    const label = frames[frameIndex % frames.length]!;
+    const prefix = kind === "DEPOSIT" ? "usr_dep_status:" : "usr_wd_status:";
+    return new InlineKeyboard().text(label, `${prefix}${requestId}`);
+  }
+
+  formatDepositPendingMessage(amount: number | string, txRef: string, lang: Language): string {
+    return lang === "AM"
+      ? `✅ የ<b>${amount} ብር</b> Deposit ጥያቄዎ (Ref: <code>${escapeHtml(txRef)}</code>) ደርሶናል!\n\n` +
+          `🔄 <b>ሁኔታ፦</b> ክፍያዎ በአድሚን በመረጋገጥ ላይ ነው (Verifying...)\n` +
+          `⏳ እባክዎ ጥቂት ደቂቃዎችን ይጠብቁ፤ ልክ እንደጸደቀ ወዲያውኑ ወደ Wallet-ዎ ይገባል!`
+      : `✅ Your deposit request of <b>${amount} ETB</b> (Ref: <code>${escapeHtml(txRef)}</code>) has been submitted!\n\n` +
+          `🔄 <b>Status:</b> Verifying your payment...\n` +
+          `⏳ Please wait a moment while your payment is being verified. You will be notified automatically once approved!`;
+  }
+
+  formatWithdrawPendingMessage(amount: number | string, provider: string, accountNumber: string, lang: Language): string {
+    return lang === "AM"
+      ? `✅ የ<b>${amount} ብር</b> የወጪ (Withdraw) ጥያቄዎ ቀርቧል!\n` +
+          `🏦 <b>አካውንት፦</b> ${escapeHtml(provider)} (<code>${escapeHtml(accountNumber)}</code>)\n\n` +
+          `🔄 <b>ሁኔታ፦</b> ክፍያዎ በሂደት ላይ ነው (Processing...)\n` +
+          `⏳ እባክዎ ክፍያው እስኪላክልዎ ጥቂት ይጠብቁ፤ ልክ እንደተላከ መልዕክት ይደርስዎታል!`
+      : `✅ Your withdrawal request of <b>${amount} ETB</b> has been submitted!\n` +
+          `🏦 <b>Account:</b> ${escapeHtml(provider)} (<code>${escapeHtml(accountNumber)}</code>)\n\n` +
+          `🔄 <b>Status:</b> Processing your payout...\n` +
+          `⏳ Please wait a moment while your withdrawal is being processed. You will be notified once paid!`;
+  }
+
+  async sendAnimatedPendingStatusMessage(options: {
+    kind: "DEPOSIT" | "WITHDRAW";
+    requestId: string;
+    chatId: string | number | bigint;
+    baseHtml: string;
+    lang: Language;
+  }) {
+    if (!this.bot) return;
+    const chatIdStr = String(options.chatId);
+    const kb = this.getPendingStatusKeyboard(options.kind, options.requestId, options.lang, 0);
+    try {
+      const sent = await this.bot.api.sendMessage(chatIdStr, options.baseHtml, {
+        parse_mode: "HTML",
+        reply_markup: kb,
+      });
+      const key = `${options.kind}:${options.requestId}`;
+      const existing = this.pendingUserTrackers.get(key);
+      if (existing) clearInterval(existing.timer);
+
+      let ticks = 0;
+      const timer = setInterval(async () => {
+        ticks += 1;
+        const tracker = this.pendingUserTrackers.get(key);
+        if (!tracker || !this.bot || ticks > 90) {
+          if (tracker) {
+            clearInterval(tracker.timer);
+            this.pendingUserTrackers.delete(key);
+          }
+          return;
+        }
+        tracker.frameIndex = (tracker.frameIndex + 1) % 3;
+        const nextKb = this.getPendingStatusKeyboard(
+          tracker.kind,
+          tracker.requestId,
+          tracker.lang,
+          tracker.frameIndex
+        );
+        try {
+          await this.bot.api.editMessageReplyMarkup(tracker.chatId, tracker.messageId, {
+            reply_markup: nextKb,
+          });
+        } catch {
+          // Ignore Telegram rate-limit or unchanged errors
+        }
+      }, 2500);
+
+      this.pendingUserTrackers.set(key, {
+        kind: options.kind,
+        requestId: options.requestId,
+        chatId: chatIdStr,
+        messageId: sent.message_id,
+        baseHtml: options.baseHtml,
+        lang: options.lang,
+        frameIndex: 0,
+        timer,
+      });
+    } catch (err) {
+      console.error("Failed sending animated pending status message:", err);
+    }
+  }
+
+  async resolvePendingUserStatusMessage(
+    kind: "DEPOSIT" | "WITHDRAW",
+    requestId: string,
+    finalStatus: "APPROVED" | "PAID" | "REJECTED"
+  ) {
+    const key = `${kind}:${requestId}`;
+    const tracker = this.pendingUserTrackers.get(key);
+    if (!tracker) return;
+    clearInterval(tracker.timer);
+    this.pendingUserTrackers.delete(key);
+    if (!this.bot) return;
+
+    const badge =
+      finalStatus === "APPROVED"
+        ? tracker.lang === "AM"
+          ? "✅ ተረጋግጧል (Approved)"
+          : "✅ Verified & Approved"
+        : finalStatus === "PAID"
+        ? tracker.lang === "AM"
+          ? "✅ ተከፍሏል (Paid)"
+          : "✅ Paid & Completed"
+        : tracker.lang === "AM"
+        ? "❌ ውድቅ ተደርጓል (Rejected)"
+        : "❌ Rejected";
+
+    const prefix = kind === "DEPOSIT" ? "usr_dep_status:" : "usr_wd_status:";
+    const finalKb = new InlineKeyboard().text(badge, `${prefix}${requestId}`);
+    try {
+      await this.bot.api.editMessageReplyMarkup(tracker.chatId, tracker.messageId, {
+        reply_markup: finalKb,
+      });
+    } catch {
+      // Ignore if message was deleted or cannot be edited
     }
   }
 
@@ -2554,6 +2728,7 @@ class BotService {
           try {
             const res = await approveDepositRequest(depositId, caller.id, caller.role);
             await ctx.answerCallbackQuery({ text: "✅ Approved!" });
+            await this.resolvePendingUserStatusMessage("DEPOSIT", depositId, "APPROVED");
             await this.syncAdminMessageResolution(
               res.deposit.adminMessageIds,
               `✅ <b>APPROVED</b> by ${escapeHtml(caller.firstName)}\n👤 ${escapeHtml(res.user.firstName)} | 💵 ${res.deposit.amount.toString()} ETB\n🔖 <code>${escapeHtml(res.deposit.transactionRef)}</code>`,
@@ -2596,6 +2771,7 @@ class BotService {
           try {
             const res = await rejectDepositRequest(depositId, caller.id, caller.role, "Rejected via Bot");
             await ctx.answerCallbackQuery({ text: "❌ Rejected" });
+            await this.resolvePendingUserStatusMessage("DEPOSIT", depositId, "REJECTED");
             await this.syncAdminMessageResolution(
               res.deposit.adminMessageIds,
               `❌ <b>REJECTED</b> by ${escapeHtml(caller.firstName)}\n👤 ${escapeHtml(res.user.firstName)} | 💵 ${res.deposit.amount.toString()} ETB\n🔖 <code>${escapeHtml(res.deposit.transactionRef)}</code>`,
@@ -2624,6 +2800,7 @@ class BotService {
           try {
             const res = await markWithdrawPaid(withdrawId, caller.id, caller.role);
             await ctx.answerCallbackQuery({ text: "✅ Marked Paid!" });
+            await this.resolvePendingUserStatusMessage("WITHDRAW", withdrawId, "PAID");
             await this.syncAdminMessageResolution(
               res.withdraw.adminMessageIds,
               `✅ <b>PAID</b> by ${escapeHtml(caller.firstName)}\n👤 ${escapeHtml(res.user.firstName)} | 💵 ${res.withdraw.amount.toString()} ETB`,
@@ -2657,6 +2834,7 @@ class BotService {
               "Rejected via Bot"
             );
             await ctx.answerCallbackQuery({ text: "❌ Rejected & Refunded" });
+            await this.resolvePendingUserStatusMessage("WITHDRAW", withdrawId, "REJECTED");
             await this.syncAdminMessageResolution(
               res.withdraw.adminMessageIds,
               `❌ <b>REJECTED & REFUNDED</b> by ${escapeHtml(caller.firstName)}\n👤 ${escapeHtml(res.user.firstName)} | 💵 ${res.withdraw.amount.toString()} ETB`,
@@ -2679,6 +2857,76 @@ class BotService {
           }
           return;
         }
+      }
+
+      if (data.startsWith("usr_dep_status:")) {
+        const depId = data.slice("usr_dep_status:".length);
+        const dep = await prisma.depositRequest.findUnique({ where: { id: depId } });
+        const uLang: Language = caller.language || "AM";
+        if (!dep) {
+          await ctx.answerCallbackQuery({
+            text: uLang === "AM" ? "ጥያቄው አልተገኘም" : "Request not found",
+            show_alert: true,
+          });
+          return;
+        }
+        if (dep.status === "PENDING") {
+          await ctx.answerCallbackQuery({
+            text:
+              uLang === "AM"
+                ? "🔄 የDeposit ጥያቄዎ በመረጋገጥ ላይ ነው (Verifying...)። እባክዎ ጥቂት ይጠብቁ፣ ሲጸድቅ ወዲያውኑ መልዕክት ይደርስዎታል!"
+                : "🔄 Your deposit is currently being verified (Verifying...). Please wait a moment!",
+            show_alert: true,
+          });
+        } else if (dep.status === "APPROVED") {
+          await this.resolvePendingUserStatusMessage("DEPOSIT", dep.id, "APPROVED");
+          await ctx.answerCallbackQuery({
+            text: uLang === "AM" ? "✅ የDeposit ጥያቄዎ ጸድቋል!" : "✅ Your deposit has been approved!",
+            show_alert: true,
+          });
+        } else {
+          await this.resolvePendingUserStatusMessage("DEPOSIT", dep.id, "REJECTED");
+          await ctx.answerCallbackQuery({
+            text: uLang === "AM" ? "❌ የDeposit ጥያቄዎ ውድቅ ተደርጓል።" : "❌ Your deposit was rejected.",
+            show_alert: true,
+          });
+        }
+        return;
+      }
+
+      if (data.startsWith("usr_wd_status:")) {
+        const wdId = data.slice("usr_wd_status:".length);
+        const wd = await prisma.withdrawRequest.findUnique({ where: { id: wdId } });
+        const uLang: Language = caller.language || "AM";
+        if (!wd) {
+          await ctx.answerCallbackQuery({
+            text: uLang === "AM" ? "ጥያቄው አልተገኘም" : "Request not found",
+            show_alert: true,
+          });
+          return;
+        }
+        if (wd.status === "PENDING") {
+          await ctx.answerCallbackQuery({
+            text:
+              uLang === "AM"
+                ? "🔄 የወጪ (Withdraw) ጥያቄዎ በሂደት ላይ ነው (Processing...)። እባክዎ ክፍያው እስኪላክ ጥቂት ይጠብቁ!"
+                : "🔄 Your withdrawal is currently being processed (Processing...). Please wait a moment!",
+            show_alert: true,
+          });
+        } else if (wd.status === "PAID") {
+          await this.resolvePendingUserStatusMessage("WITHDRAW", wd.id, "PAID");
+          await ctx.answerCallbackQuery({
+            text: uLang === "AM" ? "✅ የWithdraw ክፍያዎ ተልኳል!" : "✅ Your withdrawal has been paid!",
+            show_alert: true,
+          });
+        } else {
+          await this.resolvePendingUserStatusMessage("WITHDRAW", wd.id, "REJECTED");
+          await ctx.answerCallbackQuery({
+            text: uLang === "AM" ? "❌ የWithdraw ጥያቄዎ ውድቅ ተደርጎ ብሩ ተመልሷል።" : "❌ Your withdrawal was rejected and refunded.",
+            show_alert: true,
+          });
+        }
+        return;
       }
 
       // Language selection FIRST
@@ -2970,12 +3218,13 @@ class BotService {
           screenshotFileId: fileId,
         });
         await this.setBotState(user.id, null);
-        await ctx.reply(
-          lang === "AM"
-            ? `✅ የ<b>${state.amount} ብር</b> Deposit ጥያቄዎ ለአድሚን ተልኳል! ሲጸድቅ መልዕክት ይደርስዎታል።`
-            : `✅ Your deposit request of <b>${state.amount} ETB</b> has been sent for approval!`,
-          { parse_mode: "HTML" }
-        );
+        await this.sendAnimatedPendingStatusMessage({
+          kind: "DEPOSIT",
+          requestId: dep.id,
+          chatId: user.telegramId,
+          baseHtml: this.formatDepositPendingMessage(state.amount, txRef, lang),
+          lang,
+        });
         await this.notifyAdminsNewDeposit(dep.id);
       } catch (err) {
         const code = err instanceof Error ? err.message : "ERROR";
@@ -3120,12 +3369,13 @@ class BotService {
             receiptText: text,
           });
           await this.setBotState(user.id, null);
-          await ctx.reply(
-            lang === "AM"
-              ? `✅ የ<b>${state.amount} ብር</b> Deposit ጥያቄዎ (Ref: <code>${escapeHtml(txRef)}</code>) ለአድሚን ተልኳል! ሲጸድቅ መልዕክት ይደርስዎታል።`
-              : `✅ Your deposit request of <b>${state.amount} ETB</b> (Ref: <code>${escapeHtml(txRef)}</code>) has been submitted!`,
-            { parse_mode: "HTML" }
-          );
+          await this.sendAnimatedPendingStatusMessage({
+            kind: "DEPOSIT",
+            requestId: dep.id,
+            chatId: user.telegramId,
+            baseHtml: this.formatDepositPendingMessage(state.amount, txRef, lang),
+            lang,
+          });
           await this.notifyAdminsNewDeposit(dep.id);
         } catch (err) {
           const code = err instanceof Error ? err.message : "ERROR";
@@ -3192,12 +3442,18 @@ class BotService {
             amount,
           });
           await this.setBotState(user.id, null);
-          await ctx.reply(
-            lang === "AM"
-              ? `✅ የ<b>${amount} ብር</b> የወጪ (Withdraw) ጥያቄዎ ቀርቧል! ክፍያው እስኪላክ ገንዘቡ ተይዟል።`
-              : `✅ Withdrawal request of <b>${amount} ETB</b> submitted!`,
-            { parse_mode: "HTML" }
-          );
+          await this.sendAnimatedPendingStatusMessage({
+            kind: "WITHDRAW",
+            requestId: withdraw.id,
+            chatId: user.telegramId,
+            baseHtml: this.formatWithdrawPendingMessage(
+              amount,
+              state.provider,
+              state.accountNumber,
+              lang
+            ),
+            lang,
+          });
           await this.notifyAdminsNewWithdraw(withdraw.id);
         } catch (err) {
           await this.setBotState(user.id, null);
