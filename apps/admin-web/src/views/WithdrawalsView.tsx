@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from "react";
-import { Check, X, Search, Copy } from "lucide-react";
+import { Check, X, Search, Copy, Landmark } from "lucide-react";
 import { adminFetch, formatDateTime, formatMoney } from "../api";
 import type { AdminWithdrawalRow } from "../types";
 
 interface WithdrawalsViewProps {
   refreshSignal: number;
   onCountsChanged: () => void;
+  onManageWithdrawMethods?: () => void;
 }
 
 export const WithdrawalsView: React.FC<WithdrawalsViewProps> = ({
   refreshSignal,
   onCountsChanged,
+  onManageWithdrawMethods,
 }) => {
   const [withdrawals, setWithdrawals] = useState<AdminWithdrawalRow[]>([]);
   const [statusFilter, setStatusFilter] = useState<"PENDING" | "PAID" | "REJECTED" | "ALL">("PENDING");
@@ -135,15 +137,27 @@ export const WithdrawalsView: React.FC<WithdrawalsViewProps> = ({
           ))}
         </div>
 
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 text-slate-400 dark:text-gray-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Search account, player, bank..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-white dark:bg-[#0f1422] border border-slate-200 dark:border-[#1a233b] focus:border-blue-500 focus:outline-none rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 shadow-sm"
-          />
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          {onManageWithdrawMethods && (
+            <button
+              type="button"
+              onClick={onManageWithdrawMethods}
+              className="px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white flex items-center gap-1.5 shadow-sm shrink-0 transition"
+            >
+              <Landmark className="w-3.5 h-3.5" />
+              <span>Withdraw Methods</span>
+            </button>
+          )}
+          <div className="relative flex-1 sm:w-72">
+            <Search className="w-4 h-4 text-slate-400 dark:text-gray-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search account, player, bank..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-white dark:bg-[#0f1422] border border-slate-200 dark:border-[#1a233b] focus:border-blue-500 focus:outline-none rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500 shadow-sm"
+            />
+          </div>
         </div>
       </div>
 

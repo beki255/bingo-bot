@@ -48,8 +48,8 @@ const TAB_META: Record<AdminTab, { title: string; subtitle: string }> = {
     subtitle: "Create and configure stakes, commission %, timers, and patterns",
   },
   accounts: {
-    title: "Payment Receiving Accounts",
-    subtitle: "Manage Telebirr and bank accounts shown to players on Deposit",
+    title: "Payment & Withdrawal Accounts",
+    subtitle: "Manage Deposit receiving accounts and Withdrawal payout methods",
   },
   broadcast: {
     title: "Telegram Broadcast Center",
@@ -224,7 +224,22 @@ export default function App() {
             <DepositsView refreshSignal={refreshSignal} onCountsChanged={fetchQuickCounts} />
           )}
           {activeTab === "withdrawals" && (
-            <WithdrawalsView refreshSignal={refreshSignal} onCountsChanged={fetchQuickCounts} />
+            <WithdrawalsView
+              refreshSignal={refreshSignal}
+              onCountsChanged={fetchQuickCounts}
+              onManageWithdrawMethods={
+                admin.role === "SUPER_ADMIN"
+                  ? () => {
+                      setActiveTab("accounts");
+                      setTimeout(() => {
+                        document
+                          .getElementById("withdraw-methods")
+                          ?.scrollIntoView({ behavior: "smooth" });
+                      }, 150);
+                    }
+                  : undefined
+              }
+            />
           )}
           {activeTab === "users" && <UsersView admin={admin} refreshSignal={refreshSignal} />}
           {activeTab === "games" && <GamesView refreshSignal={refreshSignal} />}

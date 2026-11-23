@@ -1948,6 +1948,7 @@ export function createAdminRouter() {
         maintenanceMessageAm: updated.maintenanceMessageAm,
         maintenanceMessageEn: updated.maintenanceMessageEn,
       });
+      realtimeService.notifyAdminEvent({ type: "settings_updated" });
 
       await recordAuditLog(prisma, {
         actorId: req.admin!.id,

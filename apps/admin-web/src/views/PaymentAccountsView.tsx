@@ -1,7 +1,17 @@
 import React, { useEffect, useState } from "react";
-import { Plus, Edit2, Trash2, CheckCircle, XCircle, Landmark } from "lucide-react";
+import { Plus, Edit2, Trash2, CheckCircle, XCircle, Landmark, ArrowUpRight } from "lucide-react";
 import { adminFetch } from "../api";
 import type { AdminPaymentAccountRow, AdminProfile } from "../types";
+
+const QUICK_WITHDRAW_PRESETS = [
+  "Telebirr",
+  "CBE",
+  "CBE Birr",
+  "Bank of Abyssinia",
+  "Dashen Bank",
+  "Awash Bank",
+  "Amhara Bank",
+];
 
 interface PaymentAccountsViewProps {
   admin: AdminProfile;
@@ -14,9 +24,16 @@ export const PaymentAccountsView: React.FC<PaymentAccountsViewProps> = ({
 }) => {
   const isSuperAdmin = admin.role === "SUPER_ADMIN";
   const [accounts, setAccounts] = useState<AdminPaymentAccountRow[]>([]);
+  const [withdrawMethods, setWithdrawMethods] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Withdraw Method Modal State
+  const [wdModalOpen, setWdModalOpen] = useState(false);
+  const [editingWdIndex, setEditingWdIndex] = useState<number | null>(null);
+  const [wdMethodName, setWdMethodName] = useState("");
+  const [wdSaving, setWdSaving] = useState(false);
 
   const [provider, setProvider] = useState("Telebirr");
   const [accountName, setAccountName] = useState("");
@@ -37,8 +54,14 @@ export const PaymentAccountsView: React.FC<PaymentAccountsViewProps> = ({
   const fetchAccounts = async () => {
     setIsLoading(true);
     try {
-      const res = await adminFetch("/api/admin/payment-accounts");
-      if (res.ok) setAccounts(res.accounts || []);
+      const [accRes, setRes] = await Promise.all([
+        adminFetch("/api/admin/payment-accounts"),
+        adminFetch("/api/admin/settings"),
+      ]);
+      if (accRes.ok) setAccounts(accRes.accounts || []);
+      if (setRes.ok && setRes.settings) {
+        setWithdrawMethods(Array.isArray(setRes.settings.withdrawProviders) ? setRes.settings.withdrawProviders : []);
+      }
     } catch {
       // handled
     } finally {
@@ -49,6 +72,70 @@ export const PaymentAccountsView: React.FC<PaymentAccountsViewProps> = ({
   useEffect(() => {
     fetchAccounts();
   }, [refreshSignal]);
+
+  const openCreateWdMethod = () => {
+    setEditingWdIndex(null);
+    setWdMethodName("");
+    setWdModalOpen(true);
+  };
+
+  const openEditWdMethod = (index: number, currentName: string) => {
+    setEditingWdIndex(index);
+    setWdMethodName(currentName);
+    setWdModalOpen(true);
+  };
+
+  const saveWithdrawMethodsList = async (nextList: string[], successMessage: string) => {
+    setWdSaving(true);
+    try {
+      const res = await adminFetch("/api/admin/settings", {
+        method: "PUT",
+        body: JSON.stringify({ withdrawProviders: nextList }),
+      });
+      if (res.ok) {
+        const saved = Array.isArray(res.settings?.withdrawProviders)
+          ? res.settings.withdrawProviders
+          : nextList;
+        setWithdrawMethods(saved);
+        showToast(successMessage);
+        setWdModalOpen(false);
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to update withdrawal methods", "error");
+    } finally {
+      setWdSaving(false);
+    }
+  };
+
+  const handleSaveWdMethod = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleaned = wdMethodName.trim();
+    if (!cleaned) {
+      showToast("Please enter a withdrawal method name.", "error");
+      return;
+    }
+    const isDuplicate = withdrawMethods.some(
+      (m, idx) => idx !== editingWdIndex && m.toLowerCase() === cleaned.toLowerCase()
+    );
+    if (isDuplicate) {
+      showToast(`"${cleaned}" already exists in withdrawal methods.`, "error");
+      return;
+    }
+    const nextList = [...withdrawMethods];
+    if (editingWdIndex !== null) {
+      nextList[editingWdIndex] = cleaned;
+      await saveWithdrawMethodsList(nextList, `Withdrawal method updated to "${cleaned}"!`);
+    } else {
+      nextList.push(cleaned);
+      await saveWithdrawMethodsList(nextList, `Withdrawal method "${cleaned}" added!`);
+    }
+  };
+
+  const handleDeleteWdMethod = async (index: number, methodName: string) => {
+    if (!confirm(`Remove withdrawal method "${methodName}"?`)) return;
+    const nextList = withdrawMethods.filter((_, idx) => idx !== index);
+    await saveWithdrawMethodsList(nextList, `Withdrawal method "${methodName}" removed.`);
+  };
 
   const openCreate = () => {
     setEditingId(null);
@@ -216,6 +303,135 @@ export const PaymentAccountsView: React.FC<PaymentAccountsViewProps> = ({
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Withdrawal Payout Methods Section */}
+      <div id="withdraw-methods" className="pt-4 border-t border-slate-200 dark:border-[#1a233b] flex flex-col gap-5">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h3 className="text-sm font-extrabold text-white">Withdrawal Payout Methods</h3>
+            <p className="text-xs text-gray-400">
+              Bank and mobile money payout methods displayed to players when they tap Withdraw in Telegram.
+            </p>
+          </div>
+          {isSuperAdmin && (
+            <button
+              onClick={openCreateWdMethod}
+              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-2 shadow-lg shadow-emerald-600/25"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Withdraw Method</span>
+            </button>
+          )}
+        </div>
+
+        {withdrawMethods.length === 0 ? (
+          <div className="bg-[#0f1422] border border-[#1a233b] rounded-2xl p-10 text-center text-xs text-gray-500">
+            No withdrawal methods configured yet. Add Telebirr, CBE, or other banks so players can request withdrawals!
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {withdrawMethods.map((method, idx) => (
+              <div
+                key={`${method}-${idx}`}
+                className="bg-[#0f1422] border border-[#1a233b] rounded-2xl p-5 shadow-xl flex flex-col gap-3"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center">
+                      <ArrowUpRight className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-black text-white">{method}</div>
+                      <div className="text-xs text-gray-400">Player Withdraw Option</div>
+                    </div>
+                  </div>
+                  <span className="flex items-center gap-1 text-[10px] font-black text-emerald-400 bg-emerald-500/15 px-2.5 py-1 rounded-full">
+                    <CheckCircle className="w-3 h-3" /> ACTIVE
+                  </span>
+                </div>
+
+                {isSuperAdmin && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => openEditWdMethod(idx, method)}
+                      className="flex-1 py-2 rounded-xl bg-[#162038] hover:bg-blue-600 text-xs font-bold text-white flex items-center justify-center gap-1.5 transition"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" /> Edit
+                    </button>
+                    <button
+                      disabled={wdSaving}
+                      onClick={() => handleDeleteWdMethod(idx, method)}
+                      className="p-2 rounded-xl bg-rose-500/15 hover:bg-rose-600 text-rose-400 hover:text-white transition"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {wdModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <form
+            onSubmit={handleSaveWdMethod}
+            className="w-full max-w-md bg-[#0f1422] border border-[#1e2742] rounded-2xl p-6 shadow-2xl flex flex-col gap-4"
+          >
+            <h3 className="text-base font-black text-white">
+              {editingWdIndex !== null ? "Edit Withdrawal Method" : "Add Withdrawal Method"}
+            </h3>
+
+            <div>
+              <label className="text-xs font-bold text-gray-300 block mb-1">
+                Bank / Mobile Money Name
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Telebirr, CBE, CBE Birr, Bank of Abyssinia"
+                value={wdMethodName}
+                onChange={(e) => setWdMethodName(e.target.value)}
+                className="w-full bg-[#0a0e18] border border-[#1e2742] rounded-xl px-3.5 py-2.5 text-xs text-white"
+              />
+            </div>
+
+            <div>
+              <div className="text-[11px] font-bold text-gray-400 mb-2">Quick Select Presets</div>
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK_WITHDRAW_PRESETS.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setWdMethodName(preset)}
+                    className="px-2.5 py-1 rounded-lg bg-[#162038] hover:bg-blue-600 text-[11px] font-bold text-gray-200 hover:text-white transition"
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setWdModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#1a233b] dark:hover:bg-[#243356] border border-slate-300 dark:border-transparent text-xs font-bold text-slate-700 dark:text-gray-300 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={wdSaving}
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white disabled:opacity-50"
+              >
+                {wdSaving ? "Saving..." : "Save Method"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

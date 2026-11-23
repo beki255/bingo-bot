@@ -100,6 +100,8 @@ type BotConvState =
   | { step: "ADMIN_ADD_ACC_NAME"; provider: string }
   | { step: "ADMIN_ADD_ACC_NUMBER"; provider: string; accountName: string }
   | { step: "ADMIN_EDIT_PAYMENT_FIELD"; accountId: string; field: "accountNumber" | "accountName" | "provider" }
+  | { step: "ADMIN_ADD_WD_METHOD" }
+  | { step: "ADMIN_EDIT_WD_METHOD"; index: number }
   | { step: "ADMIN_EDIT_SETTING"; field: AdminSettingKey }
   | { step: "ADMIN_EDIT_BANNER" }
   | { step: "ADMIN_SET_CHANNEL_TARGET"; which: "CHANNEL" | "GROUP" }
@@ -1449,12 +1451,18 @@ class BotService {
     userRole: string,
     lang: Language
   ) {
-    const accounts = await prisma.paymentAccount.findMany({ orderBy: { sortOrder: "asc" } });
+    const [accounts, settings] = await Promise.all([
+      prisma.paymentAccount.findMany({ orderBy: { sortOrder: "asc" } }),
+      getSystemSettings(),
+    ]);
+    const wdMethods = settings.withdrawProviders.filter((m) => m.trim().length > 0);
     const kb = new InlineKeyboard();
     const lines: string[] = [];
 
     if (userRole === "SUPER_ADMIN") {
-      kb.text(lang === "AM" ? "➕ አካውንት ጨምር (Add)" : "➕ Add Payment Account", "adm:acc_add").row();
+      kb.text(lang === "AM" ? "➕ Deposit አካውንት ጨምር" : "➕ Add Deposit Account", "adm:acc_add")
+        .text(lang === "AM" ? "➕ Withdraw መንገድ ጨምር" : "➕ Add Withdraw Method", "adm:wd_method_add")
+        .row();
     }
 
     for (const acc of accounts) {
@@ -1476,20 +1484,42 @@ class BotService {
           .row();
       }
     }
+
+    const wdLines: string[] = [];
+    wdMethods.forEach((method, idx) => {
+      wdLines.push(`${idx + 1}. <b>${escapeHtml(method)}</b> (✅ Active)`);
+      if (userRole === "SUPER_ADMIN") {
+        kb.text(`✏️ WD: ${method}`, `adm:wd_method_edit:${idx}`)
+          .text(`🗑️ ${method}`, `adm:wd_method_del:${idx}`)
+          .row();
+      }
+    });
+
     kb.text("🔙 Admin Panel", "adm:home");
 
     const header =
       lang === "AM"
-        ? `🏦 <b>የክፍያ አካውንቶች (Payment Accounts)</b>\n\n`
-        : `🏦 <b>Payment Accounts</b>\n\n`;
+        ? `🏦 <b>የDeposit አካውንቶች (Deposit Accounts)</b>\n\n`
+        : `🏦 <b>Deposit Receiving Accounts</b>\n\n`;
     const body =
       lines.length > 0
         ? lines.join("\n\n")
         : lang === "AM"
-        ? "ምንም የክፍያ አካውንት አልተጨመረም። ከታች ➕ በመጫን ይጨምሩ።"
-        : "No payment accounts yet. Tap ➕ below to add one.";
+        ? "ምንም የDeposit አካውንት አልተጨመረም።"
+        : "No deposit accounts yet.";
 
-    await reply(`${header}${body}`, { parse_mode: "HTML", reply_markup: kb });
+    const wdSectionHeader =
+      lang === "AM"
+        ? `\n\n💸 <b>የWithdraw መንገዶች (Withdrawal Methods)</b>\n`
+        : `\n\n💸 <b>Withdrawal Payout Methods</b>\n`;
+    const wdBody =
+      wdLines.length > 0
+        ? wdLines.join("\n")
+        : lang === "AM"
+        ? "ምንም የWithdraw መንገድ አልተጨመረም።"
+        : "No withdrawal methods configured yet.";
+
+    await reply(`${header}${body}${wdSectionHeader}${wdBody}`, { parse_mode: "HTML", reply_markup: kb });
   }
 
   private async sendAdminSettingsPanel(
@@ -1796,6 +1826,104 @@ class BotService {
         lang === "AM"
           ? `✅ የ<b>${escapeHtml(updatedAcc.provider)}</b> መረጃ ተቀይሯል!`
           : `✅ Updated <b>${escapeHtml(updatedAcc.provider)}</b>!`,
+        { parse_mode: "HTML" }
+      );
+      await this.sendPaymentAccountsAdmin(reply, user.role, lang);
+      return true;
+    }
+
+    if (state.step === "ADMIN_ADD_WD_METHOD") {
+      if (text.length < 2 || text.length > 50) {
+        await reply(
+          lang === "AM"
+            ? "⚠️ ትክክለኛ የባንክ ወይም የክፍያ ስም ይጻፉ (ለምሳሌ: Telebirr, CBE, CBE Birr)።"
+            : "⚠️ Enter a valid bank/provider name (2-50 chars).",
+          { reply_markup: this.cancelKeyboard(lang) }
+        );
+        return true;
+      }
+      const settings = await getSystemSettings();
+      const existing = settings.withdrawProviders.filter((m) => m.trim().length > 0);
+      if (existing.some((m) => m.toLowerCase() === text.toLowerCase())) {
+        await reply(
+          lang === "AM"
+            ? `⚠️ "${escapeHtml(text)}" ቀደም ብሎ ተጨምሯል። ሌላ ስም ይጻፉ ወይም ሰርዝ ይጫኑ።`
+            : `⚠️ "${escapeHtml(text)}" already exists. Enter another name or tap Cancel.`,
+          { parse_mode: "HTML", reply_markup: this.cancelKeyboard(lang) }
+        );
+        return true;
+      }
+      const nextList = [...existing, text];
+      await prisma.systemSettings.update({
+        where: { id: 1 },
+        data: { withdrawProviders: nextList },
+      });
+      await recordAuditLog(prisma, {
+        actorId: user.id,
+        actorRole: "SUPER_ADMIN",
+        action: "ADD_WITHDRAW_METHOD",
+        targetType: "SystemSettings",
+        targetId: "1",
+        after: { added: text, withdrawProviders: nextList },
+      });
+      realtimeService.notifyAdminEvent({ type: "settings_updated" });
+      await this.setBotState(user.id, null);
+      await reply(
+        lang === "AM"
+          ? `✅ አዲስ የWithdraw መንገድ <b>${escapeHtml(text)}</b> ተጨምሯል!`
+          : `✅ Added withdrawal method <b>${escapeHtml(text)}</b>!`,
+        { parse_mode: "HTML" }
+      );
+      await this.sendPaymentAccountsAdmin(reply, user.role, lang);
+      return true;
+    }
+
+    if (state.step === "ADMIN_EDIT_WD_METHOD") {
+      if (text.length < 2 || text.length > 50) {
+        await reply(
+          lang === "AM" ? "⚠️ ትክክለኛ ስም ይጻፉ (2-50 ፊደላት)።" : "⚠️ Enter a valid name (2-50 chars).",
+          { reply_markup: this.cancelKeyboard(lang) }
+        );
+        return true;
+      }
+      const settings = await getSystemSettings();
+      const existing = settings.withdrawProviders.filter((m) => m.trim().length > 0);
+      if (state.index < 0 || state.index >= existing.length) {
+        await this.setBotState(user.id, null);
+        await reply("❌ Withdrawal method not found.");
+        return true;
+      }
+      const oldName = existing[state.index]!;
+      if (existing.some((m, idx) => idx !== state.index && m.toLowerCase() === text.toLowerCase())) {
+        await reply(
+          lang === "AM"
+            ? `⚠️ "${escapeHtml(text)}" ቀደም ብሎ አለ። ሌላ ስም ይጻፉ።`
+            : `⚠️ "${escapeHtml(text)}" already exists.`,
+          { parse_mode: "HTML", reply_markup: this.cancelKeyboard(lang) }
+        );
+        return true;
+      }
+      const nextList = [...existing];
+      nextList[state.index] = text;
+      await prisma.systemSettings.update({
+        where: { id: 1 },
+        data: { withdrawProviders: nextList },
+      });
+      await recordAuditLog(prisma, {
+        actorId: user.id,
+        actorRole: "SUPER_ADMIN",
+        action: "EDIT_WITHDRAW_METHOD",
+        targetType: "SystemSettings",
+        targetId: "1",
+        before: { oldName },
+        after: { newName: text, withdrawProviders: nextList },
+      });
+      realtimeService.notifyAdminEvent({ type: "settings_updated" });
+      await this.setBotState(user.id, null);
+      await reply(
+        lang === "AM"
+          ? `✅ የWithdraw መንገዱ ከ <b>${escapeHtml(oldName)}</b> ወደ <b>${escapeHtml(text)}</b> ተቀይሯል!`
+          : `✅ Updated withdrawal method from <b>${escapeHtml(oldName)}</b> to <b>${escapeHtml(text)}</b>!`,
         { parse_mode: "HTML" }
       );
       await this.sendPaymentAccountsAdmin(reply, user.role, lang);
@@ -2664,6 +2792,78 @@ class BotService {
             });
             await ctx.answerCallbackQuery({ text: "🗑️ Account deleted" });
           }
+          await this.sendPaymentAccountsAdmin((t, opts) => ctx.reply(t, opts), caller.role, adminLang);
+          return;
+        }
+
+        if (data === "adm:wd_method_add") {
+          if (caller.role !== "SUPER_ADMIN") {
+            await ctx.answerCallbackQuery({ text: "Super Admin only", show_alert: true });
+            return;
+          }
+          await this.setBotState(caller.id, { step: "ADMIN_ADD_WD_METHOD" });
+          await ctx.answerCallbackQuery();
+          await ctx.reply(
+            adminLang === "AM"
+              ? "➕ <b>አዲስ የWithdraw መንገድ</b>\n\nየባንኩን ወይም የክፍያውን ስም ይጻፉ (ለምሳሌ: <code>Telebirr</code>፣ <code>CBE</code>፣ <code>CBE Birr</code>፣ <code>Bank of Abyssinia</code>)፦"
+              : "➕ <b>New Withdrawal Method</b>\n\nEnter bank or mobile money name (e.g. <code>Telebirr</code>, <code>CBE</code>, <code>CBE Birr</code>):",
+            { parse_mode: "HTML", reply_markup: this.cancelKeyboard(adminLang) }
+          );
+          return;
+        }
+
+        if (data.startsWith("adm:wd_method_edit:")) {
+          if (caller.role !== "SUPER_ADMIN") {
+            await ctx.answerCallbackQuery({ text: "Super Admin only", show_alert: true });
+            return;
+          }
+          const idx = Number(data.slice("adm:wd_method_edit:".length));
+          const settings = await getSystemSettings();
+          const methods = settings.withdrawProviders.filter((m) => m.trim().length > 0);
+          if (!Number.isInteger(idx) || idx < 0 || idx >= methods.length) {
+            await ctx.answerCallbackQuery({ text: "Method not found", show_alert: true });
+            return;
+          }
+          await this.setBotState(caller.id, { step: "ADMIN_EDIT_WD_METHOD", index: idx });
+          await ctx.answerCallbackQuery();
+          await ctx.reply(
+            adminLang === "AM"
+              ? `✏️ ለ <b>${escapeHtml(methods[idx]!)}</b> አዲሱን ስም ይጻፉ፦`
+              : `✏️ Enter new name for <b>${escapeHtml(methods[idx]!)}</b>:`,
+            { parse_mode: "HTML", reply_markup: this.cancelKeyboard(adminLang) }
+          );
+          return;
+        }
+
+        if (data.startsWith("adm:wd_method_del:")) {
+          if (caller.role !== "SUPER_ADMIN") {
+            await ctx.answerCallbackQuery({ text: "Super Admin only", show_alert: true });
+            return;
+          }
+          const idx = Number(data.slice("adm:wd_method_del:".length));
+          const settings = await getSystemSettings();
+          const methods = settings.withdrawProviders.filter((m) => m.trim().length > 0);
+          if (!Number.isInteger(idx) || idx < 0 || idx >= methods.length) {
+            await ctx.answerCallbackQuery({ text: "Method not found", show_alert: true });
+            return;
+          }
+          const removed = methods[idx]!;
+          const nextList = methods.filter((_, i) => i !== idx);
+          await prisma.systemSettings.update({
+            where: { id: 1 },
+            data: { withdrawProviders: nextList },
+          });
+          await recordAuditLog(prisma, {
+            actorId: caller.id,
+            actorRole: caller.role,
+            action: "DELETE_WITHDRAW_METHOD",
+            targetType: "SystemSettings",
+            targetId: "1",
+            before: { removed },
+            after: { withdrawProviders: nextList },
+          });
+          realtimeService.notifyAdminEvent({ type: "settings_updated" });
+          await ctx.answerCallbackQuery({ text: `🗑️ Removed ${removed}` });
           await this.sendPaymentAccountsAdmin((t, opts) => ctx.reply(t, opts), caller.role, adminLang);
           return;
         }
