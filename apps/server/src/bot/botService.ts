@@ -638,6 +638,10 @@ class BotService {
     return new InlineKeyboard().text(lang === "AM" ? "❌ ሰርዝ" : "❌ Cancel", "flow:cancel");
   }
 
+  private backToHomeKeyboard(lang: Language) {
+    return new InlineKeyboard().text(lang === "AM" ? "⬅️ ተመለስ (Back)" : "⬅️ Back", "menu:home");
+  }
+
   private formatWalletError(err: unknown, lang: Language): string {
     const raw = err instanceof Error ? err.message : "ERROR";
     if (raw === "INSUFFICIENT_BALANCE") {
@@ -895,7 +899,8 @@ class BotService {
       await reply(
         lang === "AM"
           ? `🚫 Withdraw ለማዘዝ ቢያንስ ${minW} ብር Deposit ያድርጉ።`
-          : `🚫 Please deposit at least ${minW} ETB to request a withdrawal.`
+          : `🚫 Please deposit at least ${minW} ETB to request a withdrawal.`,
+        { reply_markup: this.backToHomeKeyboard(lang) }
       );
       return;
     }
@@ -905,7 +910,8 @@ class BotService {
       await reply(
         lang === "AM"
           ? "⚠️ የገንዘብ ማውጫ መንገዶች ገና በአድሚን አልተጨመሩም።"
-          : "⚠️ Withdrawal methods are not configured by Admin yet."
+          : "⚠️ Withdrawal methods are not configured by Admin yet.",
+        { reply_markup: this.backToHomeKeyboard(lang) }
       );
       return;
     }
@@ -937,7 +943,8 @@ class BotService {
     ]);
     if (!settings.transferEnabled) {
       await reply(
-        lang === "AM" ? "⚠️ ገንዘብ መላክ በአሁኑ ጊዜ ዝግ ነው።" : "⚠️ Transfers are currently disabled."
+        lang === "AM" ? "⚠️ ገንዘብ መላክ በአሁኑ ጊዜ ዝግ ነው።" : "⚠️ Transfers are currently disabled.",
+        { reply_markup: this.backToHomeKeyboard(lang) }
       );
       return;
     }
@@ -947,7 +954,7 @@ class BotService {
         lang === "AM"
           ? `🚫 ገንዘብ ለመላክ በWallet-ዎ ውስጥ ቢያንስ <b>${settings.minTransfer.toString()} ብር</b> ሊኖርዎት ይገባል።\n💰 ቀሪ ሂሳብ: <b>${wallet.balance.toFixed(2)} ብር</b>`
           : `🚫 You need at least <b>${settings.minTransfer.toString()} ETB</b> in your Wallet to transfer.\n💰 Wallet: <b>${wallet.balance.toFixed(2)} ETB</b>`,
-        { parse_mode: "HTML" }
+        { parse_mode: "HTML", reply_markup: this.backToHomeKeyboard(lang) }
       );
       return;
     }
@@ -3048,6 +3055,17 @@ class BotService {
         return;
       }
 
+      if (data === "menu:home") {
+        await this.setBotState(caller.id, null);
+        await ctx.answerCallbackQuery();
+        await this.sendWelcomeMenu(
+          (photo, opts) => ctx.replyWithPhoto(photo, opts),
+          (text, opts) => ctx.reply(text, opts),
+          lang
+        );
+        return;
+      }
+
       if (data === "menu:play") {
         await ctx.answerCallbackQuery();
         await this.sendPlayPrompt(lang, (text, opts) => ctx.reply(text, opts));
@@ -3481,7 +3499,9 @@ class BotService {
           await this.notifyAdminsNewWithdraw(withdraw.id);
         } catch (err) {
           await this.setBotState(user.id, null);
-          await ctx.reply(this.formatWalletError(err, lang));
+          await ctx.reply(this.formatWalletError(err, lang), {
+            reply_markup: this.backToHomeKeyboard(lang),
+          });
         }
         return;
       }
@@ -3545,7 +3565,9 @@ class BotService {
           );
         } catch (err) {
           await this.setBotState(user.id, null);
-          await ctx.reply(this.formatWalletError(err, lang));
+          await ctx.reply(this.formatWalletError(err, lang), {
+            reply_markup: this.backToHomeKeyboard(lang),
+          });
         }
       }
     });
