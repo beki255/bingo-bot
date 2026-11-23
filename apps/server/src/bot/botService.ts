@@ -999,7 +999,14 @@ class BotService {
       .text(
         lang === "AM" ? `👥 የጋበዝኳቸው ሰዎች (${referralCount})` : `👥 My Invites (${referralCount})`,
         "menu:my_invites"
-      );
+      )
+      .row();
+    const playLabel = "🎮 ቢንጎ ተጫወት (Play)";
+    if (env.miniAppUrl.startsWith("https://")) {
+      kb.webApp(playLabel, env.miniAppUrl);
+    } else {
+      kb.text(playLabel, "menu:play");
+    }
 
     await reply(msg, { parse_mode: "HTML", reply_markup: kb });
   }
@@ -1075,7 +1082,10 @@ class BotService {
           `• Total Referral Bonus Earned: <b>${totalBonus} ETB</b>\n\n` +
           `${listText}`;
 
-    await reply(msg, { parse_mode: "HTML" });
+    await reply(msg, {
+      parse_mode: "HTML",
+      reply_markup: this.getBroadcastPlayKeyboard(),
+    });
   }
 
   private async sendInstruction(
