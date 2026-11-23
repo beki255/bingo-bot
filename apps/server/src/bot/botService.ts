@@ -3523,14 +3523,15 @@ class BotService {
             lang === "AM"
               ? `✅ <b>${amount} ብር</b> ወደ <b>${escapeHtml(res.receiver.firstName)}</b> (${escapeHtml(res.receiver.phoneNumber!)}) በተሳካ ሁኔታ ተልኳል!\n💰 ቀሪ ሂሳብ: <b>${res.senderBalance.toFixed(2)} ብር</b>`
               : `✅ Transferred <b>${amount} ETB</b> to <b>${escapeHtml(res.receiver.firstName)}</b>!\n💰 New Wallet: <b>${res.senderBalance.toFixed(2)} ETB</b>`,
-            { parse_mode: "HTML" }
+            { parse_mode: "HTML", reply_markup: this.getBroadcastPlayKeyboard() }
           );
           const rLang: Language = res.receiver.language || "AM";
           await this.sendSafeMessage(
             res.receiver.telegramId,
             rLang === "AM"
               ? `🎁 ከ<b>${escapeHtml(res.sender.firstName)}</b> <b>${amount} ብር</b> ደርሶዎታል!\n💰 ቀሪ ሂሳብ: <b>${res.receiverBalance.toFixed(2)} ብር</b>`
-              : `🎁 You received <b>${amount} ETB</b> from <b>${escapeHtml(res.sender.firstName)}</b>!\n💰 Wallet: <b>${res.receiverBalance.toFixed(2)} ETB</b>`
+              : `🎁 You received <b>${amount} ETB</b> from <b>${escapeHtml(res.sender.firstName)}</b>!\n💰 Wallet: <b>${res.receiverBalance.toFixed(2)} ETB</b>`,
+            { withPlayButton: true }
           );
         } catch (err) {
           await this.setBotState(user.id, null);
