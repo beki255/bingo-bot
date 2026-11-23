@@ -882,7 +882,7 @@ class BotService {
       lang === "AM"
         ? `💰 ማስገባት የሚፈልጉትን መጠን ከ${minDep} ብር ጀምሮ ያስገቡ።`
         : `💰 Enter the amount you want to deposit (starting from ${minDep} ETB).`;
-    await reply(msg);
+    await reply(msg, { reply_markup: this.cancelKeyboard(lang) });
   }
 
   private async startWithdrawFlow(
@@ -3185,7 +3185,7 @@ class BotService {
               `   Phone: <code>${escapeHtml(acc.accountNumber)}</code>\n\n` +
               `2. Copy your payment confirmation SMS message, paste it here, and send it 👇 👇 👇`;
 
-        await ctx.reply(msg, { parse_mode: "HTML" });
+        await ctx.reply(msg, { parse_mode: "HTML", reply_markup: this.cancelKeyboard(lang) });
         return;
       }
 
