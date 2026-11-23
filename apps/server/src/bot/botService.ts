@@ -1121,7 +1121,7 @@ class BotService {
         `   • Either Diagonal line\n` +
         `   • All Four Corners of the cartela\n\n` +
         `2. If two or more players win on the same called number, the total prize pot is split equally among all winners.`;
-    await reply(msg, { parse_mode: "HTML" });
+    await reply(msg, { parse_mode: "HTML", reply_markup: this.getBroadcastPlayKeyboard() });
   }
 
   private async sendSupport(
