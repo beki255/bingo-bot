@@ -1150,7 +1150,10 @@ class BotService {
         : lang === "AM"
         ? "የእርዳታ አድራሻ ገና በአድሚን አልተሞላም።"
         : "Support contact is not configured yet.";
-    await reply(`${header}${body}`, { parse_mode: "HTML" });
+    await reply(`${header}${body}`, {
+      parse_mode: "HTML",
+      reply_markup: this.getBroadcastPlayKeyboard(),
+    });
   }
 
   private async sendPlayPrompt(
