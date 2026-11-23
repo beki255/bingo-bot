@@ -85,7 +85,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
     setCountdownSeconds(r.countdownSeconds);
     setNextGameDelaySeconds(r.nextGameDelaySeconds ?? 6);
     setCallIntervalMs(r.callIntervalMs);
-    setWinningPattern(r.winningPattern);
+    setWinningPattern("ONE_LINE");
     setFreeCenter(r.freeCenter);
     setIsActive(r.isActive);
     setSortOrder(r.sortOrder);
@@ -107,7 +107,7 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
         countdownSeconds: Number(countdownSeconds),
         nextGameDelaySeconds: Number(nextGameDelaySeconds),
         callIntervalMs: Number(callIntervalMs),
-        winningPattern,
+        winningPattern: "ONE_LINE" as AdminRoomRow["winningPattern"],
         freeCenter,
         isActive,
         sortOrder: Number(sortOrder),
@@ -388,16 +388,18 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ admin, refreshSignal }) =>
                 <label className="text-xs font-bold text-gray-300 block mb-1">Winning Pattern</label>
                 <select
                   value={winningPattern}
-                  onChange={(e) =>
-                    setWinningPattern(e.target.value as AdminRoomRow["winningPattern"])
-                  }
+                  onChange={(e) => {
+                    if (e.target.value === "ONE_LINE") {
+                      setWinningPattern("ONE_LINE");
+                    }
+                  }}
                   className="w-full bg-[#0a0e18] border border-[#1e2742] rounded-xl px-3 py-2 text-xs text-white"
                 >
                   <option value="ONE_LINE">One Line / 4 Corners</option>
-                  <option value="TWO_LINES">Two Lines</option>
-                  <option value="FOUR_CORNERS">Four Corners</option>
-                  <option value="X_SHAPE">X Shape</option>
-                  <option value="FULL_HOUSE">Full House</option>
+                  <option value="TWO_LINES" disabled hidden>Two Lines</option>
+                  <option value="FOUR_CORNERS" disabled hidden>Four Corners</option>
+                  <option value="X_SHAPE" disabled hidden>X Shape</option>
+                  <option value="FULL_HOUSE" disabled hidden>Full House</option>
                 </select>
               </div>
               <div>

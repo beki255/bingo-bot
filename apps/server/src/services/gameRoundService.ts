@@ -22,13 +22,72 @@ export function getLetterForNumber(n: number): BingoLetter {
 export function checkCartelaWin(
   grid: number[][],
   calledNumbersSet: Set<number>,
-  freeCenter: boolean = true
+  freeCenter: boolean = true,
+  winningPattern: "ONE_LINE" | "TWO_LINES" | "FOUR_CORNERS" | "X_SHAPE" | "FULL_HOUSE" = "ONE_LINE"
 ): { hasWon: boolean; winningKeys: Set<string> } {
   const isMarked = (r: number, c: number) => {
     if (freeCenter && r === 2 && c === 2) return true; // Center free star if enabled
     return calledNumbersSet.has(grid[r][c]);
   };
 
+  if (winningPattern === "FOUR_CORNERS") {
+    if (isMarked(0, 0) && isMarked(0, 4) && isMarked(4, 0) && isMarked(4, 4)) {
+      return { hasWon: true, winningKeys: new Set(["0-0", "0-4", "4-0", "4-4"]) };
+    }
+    return { hasWon: false, winningKeys: new Set() };
+  }
+
+  if (winningPattern === "X_SHAPE") {
+    const diag1 = [0, 1, 2, 3, 4].every((i) => isMarked(i, i));
+    const diag2 = [0, 1, 2, 3, 4].every((i) => isMarked(i, 4 - i));
+    if (diag1 && diag2) {
+      const keys = new Set<string>();
+      for (let i = 0; i < 5; i++) {
+        keys.add(`${i}-${i}`);
+        keys.add(`${i}-${4 - i}`);
+      }
+      return { hasWon: true, winningKeys: keys };
+    }
+    return { hasWon: false, winningKeys: new Set() };
+  }
+
+  if (winningPattern === "FULL_HOUSE") {
+    const keys = new Set<string>();
+    for (let r = 0; r < 5; r++) {
+      for (let c = 0; c < 5; c++) {
+        if (!isMarked(r, c)) return { hasWon: false, winningKeys: new Set() };
+        keys.add(`${r}-${c}`);
+      }
+    }
+    return { hasWon: true, winningKeys: keys };
+  }
+
+  if (winningPattern === "TWO_LINES") {
+    const completedLines: string[][] = [];
+    for (let r = 0; r < 5; r++) {
+      if ([0, 1, 2, 3, 4].every((c) => isMarked(r, c))) {
+        completedLines.push([0, 1, 2, 3, 4].map((c) => `${r}-${c}`));
+      }
+    }
+    for (let c = 0; c < 5; c++) {
+      if ([0, 1, 2, 3, 4].every((r) => isMarked(r, c))) {
+        completedLines.push([0, 1, 2, 3, 4].map((r) => `${r}-${c}`));
+      }
+    }
+    if ([0, 1, 2, 3, 4].every((i) => isMarked(i, i))) {
+      completedLines.push([0, 1, 2, 3, 4].map((i) => `${i}-${i}`));
+    }
+    if ([0, 1, 2, 3, 4].every((i) => isMarked(i, 4 - i))) {
+      completedLines.push([0, 1, 2, 3, 4].map((i) => `${i}-${4 - i}`));
+    }
+    if (completedLines.length >= 2) {
+      return { hasWon: true, winningKeys: new Set(completedLines.flat()) };
+    }
+    return { hasWon: false, winningKeys: new Set() };
+  }
+
+  // Standard ONE_LINE rule (exact match to Zemen Bingo Rules):
+  // Any horizontal row (5), vertical column (5), diagonal (\ or /, 5), OR all 4 corners (4)
   // 1. Horizontal row
   for (let r = 0; r < 5; r++) {
     if ([0, 1, 2, 3, 4].every((c) => isMarked(r, c))) {
@@ -62,16 +121,19 @@ export function checkCartelaWin(
 }
 
 export interface WinnerResult {
+  roundId?: string;
   winners: Array<{
     name: string;
     avatar: string;
     cardNo: number;
     telegramId?: string;
     userId?: string;
+    patternKeys?: string[];
   }>;
   winningCartelaNo: number;
   winningPatternKeys: string[];
   derash?: number;
+  totalPrize?: number;
   delaySeconds?: number;
 }
 
@@ -82,6 +144,7 @@ export class GameRoundService {
   private pendingSelections: Map<string, Map<string, number[]>> = new Map();
   private roomNextGameAvailableAt: Map<string, number> = new Map();
   private deferredCountdownTimers: Map<string, NodeJS.Timeout> = new Map();
+  private lastWinnerByRoom: Map<string, { result: WinnerResult; expiresAt: number }> = new Map();
 
   attachIO(io: SocketIOServer) {
     this.io = io;
@@ -237,15 +300,32 @@ export class GameRoundService {
         if (!round) return;
         const targetTicket = round.tickets.find((t) => t.cartelaNumber === data.cartelaNo);
         if (!targetTicket) return;
+        const calledSet = new Set(round.calledNumbers);
+        const freeCenter = round.room?.freeCenter ?? true;
+        const pattern = "ONE_LINE";
         const grid = generateDeterministicCartela(data.cartelaNo);
-        const win = checkCartelaWin(grid, new Set(round.calledNumbers), round.room?.freeCenter ?? true);
+        const win = checkCartelaWin(grid, calledSet, freeCenter, pattern);
         if (win.hasWon) {
           const callTimer = this.callTimers.get(data.roomId);
           if (callTimer) {
+            clearTimeout(callTimer);
             clearInterval(callTimer);
             this.callTimers.delete(data.roomId);
           }
-          await this.handleWinner(data.roomId, round.id, [{ ticket: targetTicket, keys: win.winningKeys }]);
+          // Check all real tickets in the round so simultaneous winners split the prize fairly
+          const allWinners: Array<{ ticket: typeof round.tickets[0]; keys: Set<string> }> = [];
+          for (const ticket of round.tickets) {
+            const g = generateDeterministicCartela(ticket.cartelaNumber);
+            const w = checkCartelaWin(g, calledSet, freeCenter, pattern);
+            if (w.hasWon) {
+              allWinners.push({ ticket, keys: w.winningKeys });
+            }
+          }
+          await this.handleWinner(
+            data.roomId,
+            round.id,
+            allWinners.length > 0 ? allWinners : [{ ticket: targetTicket, keys: win.winningKeys }]
+          );
         }
       });
 
@@ -423,6 +503,10 @@ export class GameRoundService {
       }
     }
 
+    const cachedWinner = this.lastWinnerByRoom.get(roomId);
+    const activeWinner =
+      cachedWinner && Date.now() < cachedWinner.expiresAt ? cachedWinner.result : null;
+
     return {
       roomId,
       roundId: round.id,
@@ -431,6 +515,7 @@ export class GameRoundService {
       status: round.status,
       postGameDelayRemaining,
       isPostGameDelay: postGameDelayRemaining > 0,
+      lastWinner: activeWinner,
       stake,
       minPlayers,
       playersCount,
@@ -892,9 +977,10 @@ export class GameRoundService {
           recentCalls,
         });
 
-        // Check REAL tickets for winner
+        // Check REAL tickets for winner strictly using active ONE_LINE rule
         const calledSet = new Set(nextCalled);
         const freeCenter = round.room?.freeCenter ?? true;
+        const pattern = "ONE_LINE";
         const winningTickets: Array<{
           ticket: typeof round.tickets[0];
           keys: Set<string>;
@@ -902,7 +988,7 @@ export class GameRoundService {
 
         for (const ticket of round.tickets) {
           const grid = generateDeterministicCartela(ticket.cartelaNumber);
-          const win = checkCartelaWin(grid, calledSet, freeCenter);
+          const win = checkCartelaWin(grid, calledSet, freeCenter, pattern);
           if (win.hasWon) {
             winningTickets.push({ ticket, keys: win.winningKeys });
           }
@@ -964,18 +1050,27 @@ export class GameRoundService {
       where: { id: roundId },
       include: { room: true },
     });
-    if (!round) return;
+    if (!round || round.status !== "RUNNING" || winningTickets.length === 0) return;
 
     const totalPrize = Number(round.prizePool);
-    const splitPrize = Math.floor(totalPrize / winningTickets.length);
+    const splitCents = Math.floor(toCents(totalPrize) / winningTickets.length);
+    const splitPrize = centsToNumber(splitCents);
 
-    // Credit real winner(s)
+    // Atomically mark round FINISHED and credit real winner(s) exactly once
+    let didFinish = false;
     await prisma.$transaction(async (tx) => {
+      const updated = await tx.gameRound.updateMany({
+        where: { id: roundId, status: "RUNNING" },
+        data: { status: "FINISHED", endedAt: new Date() },
+      });
+      if (updated.count === 0) return;
+      didFinish = true;
+
       for (const winItem of winningTickets) {
         const balAfter = await creditWinTx(tx, winItem.ticket.userId, splitPrize, roundId);
         await tx.gameTicket.update({
           where: { id: winItem.ticket.id },
-          data: { status: "WINNER", prizeWon: centsToDecimal(toCents(splitPrize)) },
+          data: { status: "WINNER", prizeWon: centsToDecimal(splitCents) },
         });
         if (winItem.ticket.user?.telegramId) {
           realtimeService.notifyWalletUpdate(winItem.ticket.user.telegramId, {
@@ -985,12 +1080,9 @@ export class GameRoundService {
           });
         }
       }
-
-      await tx.gameRound.update({
-        where: { id: roundId },
-        data: { status: "FINISHED", endedAt: new Date() },
-      });
     });
+
+    if (!didFinish) return;
 
     realtimeService.notifyAdminEvent({ type: "game_finished", payload: { roundId, roomId } });
 
@@ -998,23 +1090,32 @@ export class GameRoundService {
     this.roomNextGameAvailableAt.set(roomId, Date.now() + delaySec * 1000);
 
     const winnersPayload: WinnerResult = {
+      roundId,
       winners: winningTickets.map((w) => ({
         name: `Cartela #${w.ticket.cartelaNumber}`,
         avatar: "🎯",
         cardNo: w.ticket.cartelaNumber,
         telegramId: w.ticket.user?.telegramId ? String(w.ticket.user.telegramId) : undefined,
         userId: w.ticket.userId,
+        patternKeys: Array.from(w.keys),
       })),
       winningCartelaNo: winningTickets[0].ticket.cartelaNumber,
       winningPatternKeys: Array.from(winningTickets[0].keys),
       derash: splitPrize,
+      totalPrize,
       delaySeconds: delaySec,
     };
 
+    this.lastWinnerByRoom.set(roomId, {
+      result: winnersPayload,
+      expiresAt: Date.now() + delaySec * 1000,
+    });
+
     this.emitEvent(roomId, "game_won", winnersPayload);
 
-    // After delaySec seconds, initialize the next WAITING round
+    // After delaySec seconds, clear cached winner and initialize the next WAITING round
     setTimeout(async () => {
+      this.lastWinnerByRoom.delete(roomId);
       await this.getOrCreateActiveRound(roomId);
       const nextState = await this.getRoomState(roomId);
       this.broadcastRoomState(roomId, nextState);

@@ -139,6 +139,12 @@ async function main() {
       }
     }
 
+    // Ensure all active rooms use the standard ONE_LINE winning pattern matching the Rules
+    await prisma.room.updateMany({
+      where: { winningPattern: { not: "ONE_LINE" } },
+      data: { winningPattern: "ONE_LINE" },
+    });
+
     // Always ensure SUPER_ADMIN user exists for the configured admin Telegram ID
     if (env.superAdminTelegramId) {
       const adminTgId = BigInt(env.superAdminTelegramId);

@@ -10,12 +10,16 @@ interface WinnerInfo {
   cardNo: number;
   telegramId?: string;
   userId?: string;
+  patternKeys?: string[];
 }
 
 interface WinnerData {
+  roundId?: string;
   winners: WinnerInfo[];
   winningCartelaNo: number;
   winningPatternKeys: Set<string>;
+  prizePerWinner: number;
+  totalPrize: number;
 }
 
 // Global module-level guard so "ጨዋታው ተጀምሯል" (aac_started.mp3) NEVER repeats twice or replays on re-entering mid-game
@@ -372,6 +376,84 @@ export const LiveGame: React.FC<LiveGameProps> = ({
       }
     };
 
+    const applyServerWinner = (data: any) => {
+      if (!data) return;
+      if (winnerDataRef.current && data.roundId && winnerDataRef.current.roundId === data.roundId) {
+        return;
+      }
+      hasGameEndedRef.current = true;
+      const serverWinners: WinnerInfo[] =
+        Array.isArray(data?.winners) && data.winners.length > 0
+          ? data.winners
+          : [
+              {
+                name: `ካርቴላ #${data?.winningCartelaNo}`,
+                avatar: "🎯",
+                cardNo: data?.winningCartelaNo,
+                patternKeys: Array.isArray(data?.winningPatternKeys) ? data.winningPatternKeys : [],
+              },
+            ];
+
+      const myWinningEntry =
+        cartelaNumbers.length > 0
+          ? serverWinners.find((w) => cartelaNumbers.includes(w.cardNo))
+          : undefined;
+      const isUserWinner = Boolean(myWinningEntry);
+      const displayCardNo = myWinningEntry?.cardNo ?? data?.winningCartelaNo ?? serverWinners[0]?.cardNo;
+      const displayPatternKeys = new Set<string>(
+        (myWinningEntry?.patternKeys && myWinningEntry.patternKeys.length > 0
+          ? myWinningEntry.patternKeys
+          : data?.winningPatternKeys) || []
+      );
+      const prizePerWinner =
+        typeof data?.derash === "number" ? data.derash : Math.floor(derash / Math.max(1, serverWinners.length));
+      const totalPrize = typeof data?.totalPrize === "number" ? data.totalPrize : derash;
+
+      const delay = Number(data?.delaySeconds ?? winnerDelaySeconds ?? 6);
+      setNextGameCountdown(delay);
+
+      if (isUserWinner && onWinPrize && !hasAwardedPrizeRef.current) {
+        hasAwardedPrizeRef.current = true;
+        onWinPrize(prizePerWinner);
+      }
+
+      if (cartelaNumbers.length > 0 && !winnerDataRef.current) {
+        try {
+          const raw = localStorage.getItem("bingo_user_games");
+          const list = raw ? JSON.parse(raw) : [];
+          const newRecord = {
+            id: "game-" + Date.now(),
+            gameId: "Game " + displayGameId,
+            date: new Date().toISOString(),
+            isWinner: isUserWinner,
+            stake,
+            cartelaNumber: myWinningEntry?.cardNo || cartelaNumbers[0] || displayCardNo,
+            prize: prizePerWinner,
+            winnersCount: serverWinners.length,
+          };
+          const updated = [newRecord, ...list].slice(0, 30);
+          localStorage.setItem("bingo_user_games", JSON.stringify(updated));
+          localStorage.setItem("bingo_history_total", String(updated.length));
+        } catch {}
+      }
+
+      const wData: WinnerData = {
+        roundId: data?.roundId,
+        winners: serverWinners,
+        winningCartelaNo: displayCardNo,
+        winningPatternKeys: displayPatternKeys,
+        prizePerWinner,
+        totalPrize,
+      };
+      const wasAlreadyShown = Boolean(winnerDataRef.current);
+      winnerDataRef.current = wData;
+      setWinnerData(wData);
+
+      if (!wasAlreadyShown) {
+        playBingoWinSound();
+      }
+    };
+
     s.on("connect", () => {
       s.emit("join_room", { roomId, clientId: clientId || telegramId });
     });
@@ -403,7 +485,9 @@ export const LiveGame: React.FC<LiveGameProps> = ({
           if (rKey) announcedStartRoundKeys.add(rKey);
         }
       }
-      if (state?.status === "WAITING" && !hasGameEndedRef.current && !winnerDataRef.current) {
+      if (state?.lastWinner && !winnerDataRef.current) {
+        applyServerWinner(state.lastWinner);
+      } else if (state?.status === "WAITING" && !hasGameEndedRef.current && !winnerDataRef.current) {
         if (onNextRound) onNextRound();
       }
     });
@@ -423,34 +507,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     });
 
     s.on("game_won", (data: any) => {
-      hasGameEndedRef.current = true;
-      const winningCard = data?.winningCartelaNo;
-
-      const isUserWinner =
-        cartelaNumbers.length > 0 &&
-        (cartelaNumbers.includes(winningCard) ||
-          (Array.isArray(data?.winners) &&
-            data.winners.some((w: any) => cartelaNumbers.includes(w.cardNo))));
-
-      const delay = Number(data?.delaySeconds ?? winnerDelaySeconds ?? 6);
-      setNextGameCountdown(delay);
-
-      if (isUserWinner && onWinPrize && !hasAwardedPrizeRef.current) {
-        hasAwardedPrizeRef.current = true;
-        onWinPrize(data?.derash ?? derash);
-      }
-
-      const wData: WinnerData = {
-        winners: Array.isArray(data?.winners) && data.winners.length > 0
-          ? data.winners
-          : [{ name: isUserWinner ? "You" : `ካርቴላ #${winningCard}`, avatar: isUserWinner ? "👑" : "🎯", cardNo: winningCard }],
-        winningCartelaNo: winningCard,
-        winningPatternKeys: new Set(data?.winningPatternKeys || []),
-      };
-      winnerDataRef.current = wData;
-      setWinnerData(wData);
-
-      playBingoWinSound();
+      applyServerWinner(data);
     });
 
     s.on("game_ended", (data: any) => {
@@ -483,7 +540,9 @@ export const LiveGame: React.FC<LiveGameProps> = ({
               if (rKey) announcedStartRoundKeys.add(rKey);
             }
           }
-          if (st.status === "WAITING" && !hasGameEndedRef.current && !winnerDataRef.current) {
+          if (st.lastWinner && !winnerDataRef.current) {
+            applyServerWinner(st.lastWinner);
+          } else if (st.status === "WAITING" && !hasGameEndedRef.current && !winnerDataRef.current) {
             if (onNextRound) onNextRound();
           }
         }
@@ -501,7 +560,9 @@ export const LiveGame: React.FC<LiveGameProps> = ({
           syncUserCardsFromState(st);
           if (Array.isArray(st.calledNumbers)) setCalledNumbers(st.calledNumbers);
           if (st.currentBall) setCurrentBall(st.currentBall);
-          if (st.status === "WAITING" && !hasGameEndedRef.current && !winnerDataRef.current) {
+          if (st.lastWinner && !winnerDataRef.current) {
+            applyServerWinner(st.lastWinner);
+          } else if (st.status === "WAITING" && !hasGameEndedRef.current && !winnerDataRef.current) {
             if (onNextRound) onNextRound();
           }
         }
@@ -574,67 +635,8 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     return { hasWon: false, winningKeys: new Set() };
   };
 
-  // Check ONLY REAL REGISTERED CARDS for winner (NO FAKE UNREGISTERED CARDS)
-  useEffect(() => {
-    if (winnerData || calledNumbers.length < 4) return;
-
-    const calledSet = new Set(calledNumbers);
-    const poolToCheck = registeredCards.length > 0 ? registeredCards : cartelaNumbers;
-
-    for (const cardNo of poolToCheck) {
-      const grid = generateDeterministicCartela(cardNo);
-      const res = checkGridWin(grid, calledSet);
-      if (res.hasWon) {
-        const isUserCard = cartelaNumbers.includes(cardNo);
-
-        // If user won, credit real prize to their balance!
-        if (isUserCard && onWinPrize && !hasAwardedPrizeRef.current) {
-          hasAwardedPrizeRef.current = true;
-          onWinPrize(derash);
-        }
-
-        // Record real game into history if user actually played cards (not spectator)
-        if (cartelaNumbers.length > 0) {
-          try {
-            const raw = localStorage.getItem("bingo_user_games");
-            const list = raw ? JSON.parse(raw) : [];
-            const newRecord = {
-              id: "game-" + Date.now(),
-              gameId: "Game " + displayGameId,
-              date: new Date().toISOString(),
-              isWinner: isUserCard,
-              stake,
-              cartelaNumber: cartelaNumbers[0] || cardNo,
-              prize: derash,
-              winnersCount: 1,
-            };
-            const updated = [newRecord, ...list].slice(0, 30);
-            localStorage.setItem("bingo_user_games", JSON.stringify(updated));
-            localStorage.setItem("bingo_history_total", String(updated.length));
-          } catch {}
-        }
-
-        const wData: WinnerData = {
-          winners: [
-            {
-              name: isUserCard ? "You" : `ካርቴላ #${cardNo}`,
-              avatar: isUserCard ? "👑" : "🎯",
-              cardNo,
-            },
-          ],
-          winningCartelaNo: cardNo,
-          winningPatternKeys: res.winningKeys,
-        };
-        hasGameEndedRef.current = true;
-        winnerDataRef.current = wData;
-        setWinnerData(wData);
-        setNextGameCountdown(winnerDelaySeconds || 6);
-
-        playBingoWinSound();
-        return;
-      }
-    }
-  }, [calledNumbers, registeredCards, cartelaNumbers, derash, onWinPrize, winnerData, winnerDelaySeconds]);
+  // Server (gameRoundService.ts) is the single authoritative judge for winners and simultaneous multi-winner prize splits.
+  // Winners are received via socket `game_won` and `state.lastWinner` polling fallback.
 
   const handleCellClick = (r: number, c: number, cellValue: number) => {
     if (isAutomatic || isWatchingOnly) return;
@@ -669,6 +671,8 @@ export const LiveGame: React.FC<LiveGameProps> = ({
         winners: [{ name: "You", avatar: "👑", cardNo: activeCartelaNo }],
         winningCartelaNo: activeCartelaNo,
         winningPatternKeys: res.winningKeys,
+        prizePerWinner: derash,
+        totalPrize: derash,
       });
       playBingoWinSound();
 
@@ -1031,23 +1035,33 @@ export const LiveGame: React.FC<LiveGameProps> = ({
           })()}
 
           <div className="w-full max-w-[310px] bg-[#161834] border border-white/10 rounded-2xl p-3 shadow-2xl">
-            <div className="flex items-center justify-between text-xs mb-2 px-1">
-              <div className="flex items-center gap-1.5 text-amber-400 font-extrabold text-xs">
-                <Trophy className="w-4 h-4 text-amber-400" />
-                <span>ካርቴላ #{winnerData.winningCartelaNo}</span>
-              </div>
-              <div
-                className={`font-black text-xs px-2 py-0.5 rounded-full border ${
-                  cartelaNumbers.includes(winnerData.winningCartelaNo)
-                    ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
-                    : "text-amber-400 bg-amber-500/10 border-amber-500/20"
-                }`}
-              >
-                {cartelaNumbers.includes(winnerData.winningCartelaNo)
-                  ? `+${derash} ETB`
-                  : `ሽልማት: ${derash} ETB`}
-              </div>
-            </div>
+            {(() => {
+              const userWonThisRound =
+                cartelaNumbers.length > 0 &&
+                (cartelaNumbers.includes(winnerData.winningCartelaNo) ||
+                  winnerData.winners.some((w) => cartelaNumbers.includes(w.cardNo)));
+              return (
+                <div className="flex items-center justify-between text-xs mb-2 px-1">
+                  <div className="flex items-center gap-1.5 text-amber-400 font-extrabold text-xs">
+                    <Trophy className="w-4 h-4 text-amber-400" />
+                    <span>ካርቴላ #{winnerData.winningCartelaNo}</span>
+                  </div>
+                  <div
+                    className={`font-black text-xs px-2 py-0.5 rounded-full border ${
+                      userWonThisRound
+                        ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                        : "text-amber-400 bg-amber-500/10 border-amber-500/20"
+                    }`}
+                  >
+                    {userWonThisRound
+                      ? `+${winnerData.prizePerWinner} ETB`
+                      : winnerData.winners.length > 1
+                      ? `${winnerData.winners.length}× ${winnerData.prizePerWinner} ETB`
+                      : `ሽልማት: ${winnerData.prizePerWinner} ETB`}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="bg-[#0f1124] p-1.5 rounded-xl border border-white/5">
               <div className="grid grid-cols-5 gap-1 mb-1 text-center font-black text-[11px]">
@@ -1061,7 +1075,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
               <div className="grid grid-cols-5 gap-1">
                 {winningCartelaGrid.map((row, rIdx) =>
                   row.map((val, cIdx) => {
-                    const isCenter = rIdx === 2 && cIdx === 2;
+                    const isCenter = freeCenter && rIdx === 2 && cIdx === 2;
                     const key = `${rIdx}-${cIdx}`;
                     const isWinningPattern = winnerData.winningPatternKeys.has(key);
                     const isCalled = calledNumbers.includes(val);
