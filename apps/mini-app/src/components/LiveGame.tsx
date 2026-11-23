@@ -90,7 +90,15 @@ export const LiveGame: React.FC<LiveGameProps> = ({
   const derash = serverDerash ?? Math.floor(totalCardsCount * stake * (1 - houseCut));
 
   const [isAutomatic, setIsAutomatic] = useState(true);
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("bingo_sound_enabled") !== "false";
+    } catch {
+      return true;
+    }
+  });
+  const soundEnabledRef = useRef<boolean>(soundEnabled);
+  soundEnabledRef.current = soundEnabled;
 
   // User marked cells on active cartela: string keys `${row}-${col}`
   const [markedCells, setMarkedCells] = useState<Record<number, Set<string>>>({});
@@ -156,11 +164,39 @@ export const LiveGame: React.FC<LiveGameProps> = ({
     }
   }, [calledNumbers.length, winnerData, onNextRound]);
 
+  // Toggle sound on/off immediately (stops active audio and updates ref for live socket callbacks)
+  const handleToggleSound = () => {
+    const next = !soundEnabledRef.current;
+    soundEnabledRef.current = next;
+    setSoundEnabled(next);
+    try {
+      localStorage.setItem("bingo_sound_enabled", next ? "true" : "false");
+    } catch {}
+
+    if (!next && currentAudioRef.current) {
+      try {
+        currentAudioRef.current.pause();
+        currentAudioRef.current.currentTime = 0;
+      } catch {}
+    }
+
+    audioCacheRef.current.forEach((aud) => {
+      aud.muted = !next;
+      if (!next) {
+        try {
+          aud.pause();
+          aud.currentTime = 0;
+        } catch {}
+      }
+    });
+  };
+
   // Helper to play MP3 recording from /sounds/ with smooth transitions, 0 network latency and no stuttering
   const playAudioFile = (filename: string, fallback?: () => void) => {
-    if (!soundEnabled) return;
+    if (!soundEnabledRef.current) return;
     try {
       const audio = getAudio(filename);
+      audio.muted = !soundEnabledRef.current;
 
       // Stop previous audio cleanly if still playing
       if (currentAudioRef.current && currentAudioRef.current !== audio) {
@@ -177,11 +213,11 @@ export const LiveGame: React.FC<LiveGameProps> = ({
         playPromise.catch((err) => {
           // Ignore AbortError caused by stopping previous audio
           if (err?.name === "AbortError") return;
-          if (fallback) fallback();
+          if (soundEnabledRef.current && fallback) fallback();
         });
       }
     } catch {
-      if (fallback) fallback();
+      if (soundEnabledRef.current && fallback) fallback();
     }
   };
 
@@ -767,11 +803,17 @@ export const LiveGame: React.FC<LiveGameProps> = ({
               </div>
 
               <button
-                onClick={() => setSoundEnabled(!soundEnabled)}
-                className="p-1 rounded-md bg-white/5 text-gray-300 hover:text-white transition shrink-0"
+                type="button"
+                onClick={handleToggleSound}
+                className={`p-1.5 rounded-lg border transition shrink-0 active:scale-95 ${
+                  soundEnabled
+                    ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30"
+                    : "bg-rose-500/20 border-rose-500/40 text-rose-400 hover:bg-rose-500/30"
+                }`}
                 aria-label="Toggle Sound"
+                title={soundEnabled ? "Mute Sound" : "Unmute Sound"}
               >
-                {soundEnabled ? <Volume2 className="w-4 h-4 text-gray-200" /> : <VolumeX className="w-4 h-4 text-gray-400" />}
+                {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
               </button>
             </div>
 
