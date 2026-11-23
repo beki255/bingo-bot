@@ -32,6 +32,12 @@ const resolvedBotName =
     ? "Zemen Bingo"
     : rawBotName;
 
+const rawSupportUsername = (process.env.SUPPORT_USERNAME || "").trim();
+const resolvedSupportUsername =
+  !rawSupportUsername || rawSupportUsername.toLowerCase() === "@tunnel_tech_solution" || rawSupportUsername.toLowerCase() === "tunnel_tech_solution"
+    ? "@Zemen_Bingo_support"
+    : rawSupportUsername;
+
 export const env = {
   port: Number(process.env.PORT || 3001),
   nodeEnv: process.env.NODE_ENV || "development",
@@ -43,7 +49,7 @@ export const env = {
     process.env.WELCOME_BANNER_URL ||
     path.resolve(__dirname, "../../assets/welcome_banner.jpg")
   ).trim(),
-  supportUsername: (process.env.SUPPORT_USERNAME || "").trim(),
+  supportUsername: resolvedSupportUsername,
   miniAppUrl: miniAppUrlRaw,
   adminWebUrl: computedAdminWebUrl,
   superAdminTelegramId: (process.env.SUPER_ADMIN_TELEGRAM_ID || "7748253327").trim(),

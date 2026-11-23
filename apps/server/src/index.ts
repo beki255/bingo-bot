@@ -79,7 +79,7 @@ async function main() {
           id: 1,
           botName: env.botName || "Zemen Bingo",
           welcomeBannerUrl: env.welcomeBannerUrl || "",
-          supportUsername: env.supportUsername || "@tunnel_tech_solution",
+          supportUsername: env.supportUsername || "@Zemen_Bingo_support",
           instructionAm: defaultInstructionAm,
           instructionEn: defaultInstructionEn,
           welcomeBonusEnabled: true,
@@ -114,6 +114,13 @@ async function main() {
         existingSettings.botName.toLowerCase() === "bingo"
       ) {
         updates.botName = "Zemen Bingo";
+      }
+      if (
+        !existingSettings.supportUsername ||
+        existingSettings.supportUsername.toLowerCase() === "@tunnel_tech_solution" ||
+        existingSettings.supportUsername.toLowerCase() === "tunnel_tech_solution"
+      ) {
+        updates.supportUsername = "@Zemen_Bingo_support";
       }
       // Reset any old cached Telegram file_id so the new Zemen Bingo bundled welcome_banner.jpg is uploaded fresh
       if (

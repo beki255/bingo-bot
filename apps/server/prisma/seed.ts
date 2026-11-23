@@ -13,7 +13,7 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("Seeding database...");
 
-  const supportUsername = process.env.SUPPORT_USERNAME || "@tunnel_tech_solution";
+  const supportUsername = process.env.SUPPORT_USERNAME || "@Zemen_Bingo_support";
 
   const defaultInstructionAm = [
     "🃏 የካርቴላ (መጫወቻ ካርድ) ምርጫ",

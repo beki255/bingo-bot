@@ -947,21 +947,18 @@ class BotService {
     reply: (text: string, opts?: object) => Promise<unknown>
   ) {
     const settings = await getSystemSettings();
-    const handle = settings.supportUsername.trim();
-    const channel = settings.channelUrl.trim();
+    const rawHandle = (settings.supportUsername || "@Zemen_Bingo_support").trim();
+    const handle = rawHandle
+      ? rawHandle.startsWith("@")
+        ? rawHandle
+        : `@${rawHandle}`
+      : "";
     const lines: string[] = [];
     if (handle) {
       lines.push(
         lang === "AM"
           ? `ማንኛውም ጥያቄ ወይም የክፍያ ችግር ካለ ${escapeHtml(handle)} ላይ ያናግሩን።`
           : `Need help? Message ${escapeHtml(handle)}.`
-      );
-    }
-    if (channel) {
-      lines.push(
-        lang === "AM"
-          ? `📢 ቻናላችን: ${escapeHtml(channel)}`
-          : `📢 Channel: ${escapeHtml(channel)}`
       );
     }
     const header = lang === "AM" ? "☎️ <b>እርዳታ</b>\n\n" : "☎️ <b>Contact Support</b>\n\n";
@@ -1761,7 +1758,12 @@ class BotService {
     if (currentSettings.botName === "Bingo" && env.botName && env.botName !== "Bingo") {
       initUpdates.botName = env.botName;
     }
-    if (!currentSettings.supportUsername && env.supportUsername) {
+    if (
+      (!currentSettings.supportUsername ||
+        currentSettings.supportUsername.toLowerCase() === "@tunnel_tech_solution" ||
+        currentSettings.supportUsername.toLowerCase() === "tunnel_tech_solution") &&
+      env.supportUsername
+    ) {
       initUpdates.supportUsername = env.supportUsername;
     }
     if (currentSettings.withdrawProviders.length === 0) {
