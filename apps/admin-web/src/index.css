@@ -213,58 +213,74 @@ html.light .text-purple-400 {
 }
 
 /* Action buttons and badge pills in light mode */
-html.light [class*="bg-emerald-"][class*="/20"],
-html.light [class*="bg-emerald-"][class*="/10"] {
+html.light [class*="bg-emerald-500/"],
+html.light [class*="bg-emerald-600/"] {
   background-color: #d1fae5 !important;
   border-color: #a7f3d0 !important;
   color: #065f46 !important;
 }
 
-html.light [class*="bg-rose-"][class*="/20"],
-html.light [class*="bg-rose-"][class*="/10"] {
+html.light [class*="bg-rose-500/"],
+html.light [class*="bg-rose-600/"] {
   background-color: #ffe4e6 !important;
   border-color: #fecdd3 !important;
   color: #9f1239 !important;
 }
 
-html.light [class*="bg-amber-"][class*="/20"],
-html.light [class*="bg-amber-"][class*="/10"] {
+html.light [class*="bg-amber-500/"],
+html.light [class*="bg-amber-600/"] {
   background-color: #fef3c7 !important;
   border-color: #fde68a !important;
   color: #92400e !important;
 }
 
-html.light [class*="bg-cyan-"][class*="/20"],
-html.light [class*="bg-cyan-"][class*="/10"] {
+html.light [class*="bg-cyan-500/"],
+html.light [class*="bg-cyan-600/"] {
   background-color: #e0f2fe !important;
   border-color: #bae6fd !important;
   color: #075985 !important;
 }
 
-html.light [class*="bg-blue-"][class*="/20"],
-html.light [class*="bg-blue-"][class*="/10"] {
+html.light [class*="bg-blue-500/"],
+html.light [class*="bg-blue-600/"] {
   background-color: #dbeafe !important;
   border-color: #bfdbfe !important;
   color: #1e40af !important;
 }
 
-html.light [class*="bg-purple-"][class*="/20"],
-html.light [class*="bg-purple-"][class*="/10"] {
+html.light [class*="bg-purple-500/"],
+html.light [class*="bg-purple-600/"] {
   background-color: #f3e8ff !important;
   border-color: #e9d5ff !important;
   color: #6b21a8 !important;
 }
 
-/* Ensure solid-color buttons retain crisp white text */
+/* Ensure solid-color buttons retain crisp background and white text */
 html.light .bg-blue-600,
-html.light .bg-blue-500,
+html.light .bg-blue-500 {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+}
 html.light .bg-emerald-600,
-html.light .bg-emerald-500,
+html.light .bg-emerald-500 {
+  background-color: #059669 !important;
+  color: #ffffff !important;
+}
 html.light .bg-rose-600,
-html.light .bg-rose-500,
-html.light .bg-purple-600,
-html.light .bg-amber-600,
+html.light .bg-rose-500 {
+  background-color: #e11d48 !important;
+  color: #ffffff !important;
+}
+html.light .bg-purple-600 {
+  background-color: #9333ea !important;
+  color: #ffffff !important;
+}
+html.light .bg-amber-600 {
+  background-color: #d97706 !important;
+  color: #ffffff !important;
+}
 html.light .bg-cyan-600 {
+  background-color: #0891b2 !important;
   color: #ffffff !important;
 }
 html.light .bg-blue-600 *,
