@@ -22,16 +22,40 @@ import {
   DollarSign,
 } from "lucide-react";
 
+export interface RuleRoomInfo {
+  id: string;
+  nameAm: string;
+  nameEn: string;
+  stakeAmount: number;
+  minPlayers?: number;
+  countdownSeconds?: number;
+}
+
 interface RulesScreenProps {
   onBack: () => void;
   initialLang?: "AM" | "EN";
+  rooms?: RuleRoomInfo[];
 }
 
 type TabType = "card" | "game" | "winner" | "penalty";
 
-export const RulesScreen: React.FC<RulesScreenProps> = ({ onBack, initialLang = "AM" }) => {
+export const RulesScreen: React.FC<RulesScreenProps> = ({ onBack, initialLang = "AM", rooms = [] }) => {
   const [lang, setLang] = useState<"AM" | "EN">(initialLang);
   const [activeTab, setActiveTab] = useState<TabType>("card");
+
+  const roomConfigs = rooms.map((r) => ({
+    id: r.id,
+    nameAm: r.nameAm || r.nameEn,
+    nameEn: r.nameEn || r.nameAm,
+    minPlayers: r.minPlayers ?? 2,
+    countdownSeconds: r.countdownSeconds ?? 30,
+  }));
+  const uniqueMinPlayers = Array.from(new Set(roomConfigs.map((r) => r.minPlayers)));
+  const singleMinPlayers =
+    uniqueMinPlayers.length === 1 ? uniqueMinPlayers[0] : uniqueMinPlayers.length === 0 ? 2 : null;
+  const uniqueCountdowns = Array.from(new Set(roomConfigs.map((r) => r.countdownSeconds)));
+  const singleCountdown =
+    uniqueCountdowns.length === 1 ? uniqueCountdowns[0] : uniqueCountdowns.length === 0 ? 30 : null;
 
   const tabs: { id: TabType; title: string; icon: React.ElementType }[] = [
     { id: "card", title: lang === "AM" ? "መጫወቻ ካርድ" : "Card", icon: CreditCard },
@@ -203,6 +227,53 @@ export const RulesScreen: React.FC<RulesScreenProps> = ({ onBack, initialLang = 
               </p>
             </div>
 
+            {/* 4. Countdown Start (Minimum Players) */}
+            <div className="bg-[#14162e] border border-white/10 rounded-2xl p-4 shadow-xl">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-7 h-7 rounded-full bg-purple-500 flex items-center justify-center text-white font-black text-xs shrink-0 shadow-sm">
+                  4
+                </div>
+                <h3 className="text-sm font-bold text-white">Countdown Start (Minimum Players)</h3>
+              </div>
+              {singleMinPlayers !== null ? (
+                <p className="text-xs text-amber-200/90 leading-relaxed pl-10 font-medium">
+                  {lang === "AM" ? (
+                    <>
+                      የጨዋታው ቆጣሪ (Countdown) መቁጠር የሚጀምረው ቢያንስ{" "}
+                      <span className="font-black text-white">{singleMinPlayers}</span>{" "}
+                      ተጫዋቾች (ካርቴላዎች) ሲመረጡ ነው።
+                    </>
+                  ) : (
+                    <>
+                      The countdown timer starts once at least{" "}
+                      <span className="font-black text-white">{singleMinPlayers}</span>{" "}
+                      players (cartelas) are selected.
+                    </>
+                  )}
+                </p>
+              ) : (
+                <div className="pl-10">
+                  <p className="text-xs text-amber-200/90 leading-relaxed font-medium">
+                    {lang === "AM"
+                      ? "የጨዋታው ቆጣሪ (Countdown) መቁጠር የሚጀምረው በእያንዳንዱ መደብ የተወሰነው አነስተኛ የተጫዋቾች (ካርቴላዎች) ቁጥር ሲሞላ ነው፦"
+                      : "The countdown timer starts once the minimum required players (cartelas) for the room is reached:"}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {roomConfigs.map((r) => (
+                      <span
+                        key={r.id}
+                        className="bg-purple-500/15 border border-purple-400/30 rounded-lg px-2.5 py-1 text-[11px] font-bold text-purple-200"
+                      >
+                        {lang === "AM"
+                          ? `${r.nameAm}: ቢያንስ ${r.minPlayers} ተጫዋቾች (ካርቴላዎች)`
+                          : `${r.nameEn}: min ${r.minPlayers} players (cartelas)`}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* 4. Card Selection Tips */}
             <div className="bg-gradient-to-br from-[#1b1c3a] to-[#14162e] border border-amber-500/30 rounded-2xl p-4 shadow-xl">
               <div className="flex items-center gap-2 mb-3">
@@ -247,8 +318,14 @@ export const RulesScreen: React.FC<RulesScreenProps> = ({ onBack, initialLang = 
               </div>
               <p className="text-xs text-amber-200/90 leading-relaxed pl-9 font-medium">
                 {lang === "AM"
-                  ? "ወደ ጨዋታው ለመግባት የምንፈልገውን ካርድ ከመርጠን ለምዝገባ የተሰጠው ሰከንድ ዜሮ ሲሆን ቀጥታ ወደ ጨዋታ ያስገባናል"
-                  : "Once minimum 3 players join, the 45-second timer counts down to 0 and launches the game."}
+                  ? singleCountdown !== null
+                    ? `ወደ ጨዋታው ለመግባት የምንፈልገውን ካርድ ከመረጥን በኋላ፣ አነስተኛው የተጫዋቾች (ካርቴላዎች) ቁጥር ሲሞላ የተሰጠው ${singleCountdown} ሰከንድ ቆጣሪ ዜሮ ሲሆን ቀጥታ ወደ ጨዋታ ያስገባናል።`
+                    : `ወደ ጨዋታው ለመግባት የምንፈልገውን ካርድ ከመረጥን በኋላ፣ አነስተኛው የተጫዋቾች (ካርቴላዎች) ቁጥር ሲሞላ ለመደቡ የተሰጠው ሰከንድ ቆጣሪ (${roomConfigs.map((r) => `${r.nameAm}: ${r.countdownSeconds}s`).join(" • ")}) ዜሮ ሲሆን ቀጥታ ወደ ጨዋታ ያስገባናል።`
+                  : singleMinPlayers !== null && singleCountdown !== null
+                  ? `Once at least ${singleMinPlayers} players (cartelas) are selected, the ${singleCountdown}-second timer counts down to 0 and launches the game.`
+                  : singleCountdown !== null
+                  ? `Once the room's minimum players (cartelas) requirement is met, the ${singleCountdown}-second timer counts down to 0 and launches the game.`
+                  : `Once the room's minimum players (cartelas) requirement is met, the registration timer (${roomConfigs.map((r) => `${r.nameEn}: ${r.countdownSeconds}s`).join(" • ")}) counts down to 0 and launches the game.`}
               </p>
             </div>
           </div>

@@ -257,17 +257,20 @@ export default function App() {
     };
   }, []);
 
+  const fetchRooms = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/rooms`);
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.rooms) && data.rooms.length > 0) {
+        setRooms(data.rooms);
+      }
+    } catch {}
+  };
+
   // Fetch live rooms, maintenance status & Telegram user balance
   useEffect(() => {
     fetchMaintenanceStatus();
-    fetch(`${API_BASE_URL}/api/rooms`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.ok && Array.isArray(data.rooms) && data.rooms.length > 0) {
-          setRooms(data.rooms);
-        }
-      })
-      .catch(() => {});
+    fetchRooms();
 
     handleRefreshUserData();
   }, []);
@@ -483,7 +486,10 @@ export default function App() {
 
               {/* Rules Button */}
               <button
-                onClick={() => setIsRulesOpen(true)}
+                onClick={() => {
+                  fetchRooms();
+                  setIsRulesOpen(true);
+                }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 active:scale-95 text-xs font-semibold text-gray-200 transition shadow-sm"
               >
                 <HelpCircle className="w-4 h-4 text-amber-400" />
@@ -500,7 +506,7 @@ export default function App() {
           >
             {/* Rules Screen (Interactive 4-Step Rules Guide with Language Sync) */}
             {activeTab === "game" && isRulesOpen && (
-              <RulesScreen initialLang={userLang} onBack={() => setIsRulesOpen(false)} />
+              <RulesScreen initialLang={userLang} rooms={rooms} onBack={() => setIsRulesOpen(false)} />
             )}
 
             {/* Game Lobby (When rules is not open) */}
