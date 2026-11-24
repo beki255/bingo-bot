@@ -16,6 +16,7 @@ import {
 } from "../services/walletService.js";
 import { botService } from "../bot/botService.js";
 import { realtimeService } from "../services/realtimeService.js";
+import { getAdminAnalytics, type AnalyticsRange } from "../services/analyticsService.js";
 
 interface AdminJwtPayload {
   userId: string;
@@ -529,6 +530,21 @@ export function createAdminRouter() {
     } catch (err) {
       console.error("Admin dashboard error:", err);
       res.status(500).json({ ok: false, error: "FAILED_FETCH_DASHBOARD" });
+    }
+  });
+
+  router.get("/analytics", async (req, res) => {
+    try {
+      const rawRange = typeof req.query.range === "string" ? req.query.range : "30d";
+      const allowed: AnalyticsRange[] = ["today", "7d", "30d", "90d", "all"];
+      const range: AnalyticsRange = allowed.includes(rawRange as AnalyticsRange)
+        ? (rawRange as AnalyticsRange)
+        : "30d";
+      const analytics = await getAdminAnalytics(range);
+      res.json({ ok: true, analytics });
+    } catch (err) {
+      console.error("Admin analytics error:", err);
+      res.status(500).json({ ok: false, error: "FAILED_FETCH_ANALYTICS" });
     }
   });
 

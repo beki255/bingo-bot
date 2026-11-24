@@ -1,5 +1,6 @@
 export type AdminTab =
   | "dashboard"
+  | "analytics"
   | "deposits"
   | "withdrawals"
   | "users"
@@ -11,6 +12,153 @@ export type AdminTab =
   | "channel_post"
   | "settings"
   | "audit";
+
+export type AnalyticsRange = "today" | "7d" | "30d" | "90d" | "all";
+export type AnalyticsGranularity = "hour" | "day" | "week" | "month";
+
+export interface AnalyticsSeriesPoint {
+  key: string;
+  label: string;
+  deposits: number;
+  depositsCount: number;
+  withdrawals: number;
+  withdrawalsCount: number;
+  netCashflow: number;
+  houseProfit: number;
+  totalPot: number;
+  roundsCount: number;
+  ticketsCount: number;
+  newUsers: number;
+}
+
+export interface HourlyActivityPoint {
+  hour: number;
+  label: string;
+  tickets: number;
+  rounds: number;
+  depositsAmount: number;
+  depositsCount: number;
+  withdrawalsAmount: number;
+}
+
+export interface ProviderBreakdownRow {
+  provider: string;
+  amount: number;
+  count: number;
+  sharePct: number;
+}
+
+export interface RoomPerformanceRow {
+  roomId: string;
+  nameAm: string;
+  nameEn: string;
+  stakeAmount: number;
+  houseCutPercent: number;
+  isActive: boolean;
+  roundsCount: number;
+  ticketsCount: number;
+  avgTicketsPerRound: number;
+  totalPot: number;
+  houseProfit: number;
+  prizePool: number;
+  sharePct: number;
+}
+
+export interface LedgerBreakdownRow {
+  type: string;
+  count: number;
+  amount: number;
+}
+
+export interface LeaderboardEntry {
+  userId: string;
+  name: string;
+  username: string | null;
+  phoneNumber: string | null;
+  amount: number;
+  count: number;
+}
+
+export interface AdminAnalyticsData {
+  range: AnalyticsRange;
+  granularity: AnalyticsGranularity;
+  generatedAt: string;
+  summary: {
+    approvedDepositsAmount: number;
+    approvedDepositsCount: number;
+    avgDepositAmount: number;
+    pendingDepositsAmount: number;
+    pendingDepositsCount: number;
+    rejectedDepositsAmount: number;
+    rejectedDepositsCount: number;
+    depositApprovalRate: number;
+    depositsChangePct: number | null;
+
+    paidWithdrawalsAmount: number;
+    paidWithdrawalsCount: number;
+    avgWithdrawalAmount: number;
+    pendingWithdrawalsAmount: number;
+    pendingWithdrawalsCount: number;
+    rejectedWithdrawalsAmount: number;
+    rejectedWithdrawalsCount: number;
+    withdrawalApprovalRate: number;
+    withdrawalsChangePct: number | null;
+
+    netCashflow: number;
+    houseProfit: number;
+    houseProfitChangePct: number | null;
+    totalPotVolume: number;
+    totalPrizesPaid: number;
+    effectiveHouseMargin: number;
+    totalWalletLiability: number;
+    totalLockedLiability: number;
+
+    roundsFinished: number;
+    roundsCancelled: number;
+    roundsChangePct: number | null;
+    totalTicketsSold: number;
+    avgTicketsPerRound: number;
+    avgPotPerRound: number;
+    avgBallsPerWin: number;
+    burnedFalseClaims: number;
+
+    welcomeBonusTotal: number;
+    welcomeBonusCount: number;
+    referralBonusTotal: number;
+    referralBonusCount: number;
+    adminCreditTotal: number;
+    adminDebitTotal: number;
+    p2pTransfersVolume: number;
+    p2pTransfersCount: number;
+  };
+  series: AnalyticsSeriesPoint[];
+  hourlyActivity: HourlyActivityPoint[];
+  peakHour: { hour: number; label: string; tickets: number };
+  depositProviders: ProviderBreakdownRow[];
+  withdrawalProviders: ProviderBreakdownRow[];
+  roomPerformance: RoomPerformanceRow[];
+  ledgerBreakdown: LedgerBreakdownRow[];
+  userStats: {
+    totalUsers: number;
+    verifiedUsers: number;
+    bannedUsers: number;
+    verificationRate: number;
+    newUsers: number;
+    newUsersChangePct: number | null;
+    activePlayers: number;
+    depositingPlayers: number;
+    referralsInPeriod: number;
+    langAm: number;
+    langEn: number;
+    langUnset: number;
+  };
+  leaderboards: {
+    topDepositors: LeaderboardEntry[];
+    topWinners: LeaderboardEntry[];
+    mostActive: LeaderboardEntry[];
+    topReferrers: LeaderboardEntry[];
+  };
+}
 
 export interface AdminProfile {
   id: string;

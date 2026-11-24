@@ -1,6 +1,7 @@
 import React from "react";
 import {
   LayoutDashboard,
+  BarChart3,
   ArrowDownLeft,
   ArrowUpRight,
   Users,
@@ -54,6 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: "Operations",
       items: [
         { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+        { id: "analytics", label: "Analytics", icon: BarChart3 },
         {
           id: "deposits",
           label: "Deposits",

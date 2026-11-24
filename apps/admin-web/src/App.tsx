@@ -4,6 +4,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Header } from "./components/Header";
 import { LoginView } from "./views/LoginView";
 import { DashboardView } from "./views/DashboardView";
+import { AnalyticsView } from "./views/AnalyticsView";
 import { DepositsView } from "./views/DepositsView";
 import { WithdrawalsView } from "./views/WithdrawalsView";
 import { UsersView } from "./views/UsersView";
@@ -22,6 +23,10 @@ const TAB_META: Record<AdminTab, { title: string; subtitle: string }> = {
   dashboard: {
     title: "Operations Dashboard",
     subtitle: "Real-time system overview, cashflow, and live rooms",
+  },
+  analytics: {
+    title: "Analytics & Reports",
+    subtitle: "Visual charts & deep breakdown of deposits, withdrawals, profit, rooms, and players",
   },
   deposits: {
     title: "Deposit Approvals Queue",
@@ -219,6 +224,9 @@ export default function App() {
         <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#080b12] transition-colors">
           {activeTab === "dashboard" && (
             <DashboardView onNavigate={setActiveTab} refreshSignal={refreshSignal} />
+          )}
+          {activeTab === "analytics" && (
+            <AnalyticsView refreshSignal={refreshSignal} />
           )}
           {activeTab === "deposits" && (
             <DepositsView refreshSignal={refreshSignal} onCountsChanged={fetchQuickCounts} />
