@@ -11,6 +11,15 @@ import { realtimeService } from "./services/realtimeService.js";
 async function main() {
   await prisma.$connect();
 
+  // Safely ensure User.maxCartelasOverride column exists even before manual db:push
+  try {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "maxCartelasOverride" INTEGER`
+    );
+  } catch (colErr) {
+    console.warn("Schema auto-ensure maxCartelasOverride skipped:", colErr);
+  }
+
   // Auto-initialize default system settings and rooms on fresh database
   try {
     const defaultInstructionAm = [

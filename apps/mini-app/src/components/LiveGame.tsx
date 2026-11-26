@@ -893,7 +893,7 @@ export const LiveGame: React.FC<LiveGameProps> = ({
 
               <div className="mt-1.5 flex items-center justify-center gap-2">
                 {cartelaNumbers.length > 1 ? (
-                  <div className="flex gap-1">
+                  <div className="flex flex-wrap items-center justify-center gap-1 max-h-16 overflow-y-auto px-1">
                     {cartelaNumbers.map((cNum, idx) => (
                       <button
                         key={cNum}

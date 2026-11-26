@@ -8,6 +8,7 @@ import {
   Eye,
   Send,
   Shield,
+  Layers,
   ChevronLeft,
   ChevronRight,
   X,
@@ -91,6 +92,10 @@ export const UsersView: React.FC<UsersViewProps> = ({ admin, refreshSignal }) =>
   const [roleValue, setRoleValue] = useState<"PLAYER" | "CASHIER" | "SUPER_ADMIN">("PLAYER");
   const [roleUsername, setRoleUsername] = useState("");
   const [rolePassword, setRolePassword] = useState("");
+
+  const [cardLimitTarget, setCardLimitTarget] = useState<AdminUserRow | null>(null);
+  const [cardLimitMode, setCardLimitMode] = useState<"default" | "unlimited" | "custom">("default");
+  const [cardLimitCustomValue, setCardLimitCustomValue] = useState("10");
 
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
@@ -245,6 +250,60 @@ export const UsersView: React.FC<UsersViewProps> = ({ admin, refreshSignal }) =>
     }
   };
 
+  const openCardLimitModal = (u: AdminUserRow) => {
+    setCardLimitTarget(u);
+    if (u.maxCartelasOverride === 0) {
+      setCardLimitMode("unlimited");
+      setCardLimitCustomValue("10");
+    } else if (typeof u.maxCartelasOverride === "number" && u.maxCartelasOverride > 0) {
+      setCardLimitMode("custom");
+      setCardLimitCustomValue(String(u.maxCartelasOverride));
+    } else {
+      setCardLimitMode("default");
+      setCardLimitCustomValue("10");
+    }
+  };
+
+  const handleCardLimitSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cardLimitTarget) return;
+
+    let nextLimit: number | null = null;
+    if (cardLimitMode === "unlimited") {
+      nextLimit = 0;
+    } else if (cardLimitMode === "custom") {
+      const parsed = Number(cardLimitCustomValue);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 600) {
+        showToast("Enter a whole number between 1 and 600", "error");
+        return;
+      }
+      nextLimit = parsed;
+    }
+
+    setActionLoading(true);
+    try {
+      const res = await adminFetch(`/api/admin/users/${cardLimitTarget.id}/card-limit`, {
+        method: "POST",
+        body: JSON.stringify({ maxCartelasOverride: nextLimit }),
+      });
+      if (res.ok) {
+        const label =
+          nextLimit === null
+            ? "Room Default"
+            : nextLimit === 0
+            ? "Unlimited"
+            : `${nextLimit} cards`;
+        showToast(`Card limit for ${cardLimitTarget.firstName} set to ${label}!`);
+        setCardLimitTarget(null);
+        fetchUsers();
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to update card limit", "error");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   return (
     <div className="p-4 sm:p-8 flex flex-col gap-5 animate-fadeIn">
       {toast && (
@@ -366,6 +425,19 @@ export const UsersView: React.FC<UsersViewProps> = ({ admin, refreshSignal }) =>
                             {u.role}
                           </span>
                         )}
+                        {u.maxCartelasOverride !== null && u.maxCartelasOverride !== undefined && (
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-black ${
+                              u.maxCartelasOverride === 0
+                                ? "bg-emerald-500/20 text-emerald-400"
+                                : "bg-blue-500/20 text-blue-400"
+                            }`}
+                          >
+                            {u.maxCartelasOverride === 0
+                              ? "UNLIMITED CARDS"
+                              : `MAX ${u.maxCartelasOverride} CARDS`}
+                          </span>
+                        )}
                       </div>
                       <div className="text-[11px] text-gray-400">
                         {u.username ? `@${u.username}` : "No username"} • Ref:{" "}
@@ -450,6 +522,13 @@ export const UsersView: React.FC<UsersViewProps> = ({ admin, refreshSignal }) =>
                               className="p-2 rounded-lg bg-purple-500/15 hover:bg-purple-600 text-purple-400 hover:text-white transition"
                             >
                               <Shield className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              title="Set Max Cartelas Limit"
+                              onClick={() => openCardLimitModal(u)}
+                              className="p-2 rounded-lg bg-blue-500/15 hover:bg-blue-600 text-blue-400 hover:text-white transition"
+                            >
+                              <Layers className="w-3.5 h-3.5" />
                             </button>
                             <button
                               title={u.isBanned ? "Unban Player" : "Ban Player"}
@@ -908,6 +987,106 @@ export const UsersView: React.FC<UsersViewProps> = ({ admin, refreshSignal }) =>
                 className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-xs font-bold text-white disabled:opacity-50"
               >
                 Save Role
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal: Per-User Cartela Limit */}
+      {cardLimitTarget && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <form
+            onSubmit={handleCardLimitSubmit}
+            className="w-full max-w-md bg-[#0f1422] border border-[#1e2742] rounded-2xl p-6 shadow-2xl flex flex-col gap-4"
+          >
+            <div>
+              <h3 className="text-base font-black text-white">Player Cartela Selection Limit</h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Configure max cards per round for <b>{cardLimitTarget.firstName}</b>{" "}
+                {cardLimitTarget.username ? `(@${cardLimitTarget.username})` : ""}
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {(
+                [
+                  {
+                    id: "default",
+                    title: "Room Default",
+                    desc: "Follow each room's standard max cards limit (usually 2).",
+                  },
+                  {
+                    id: "unlimited",
+                    title: "Unlimited Cards",
+                    desc: "Select as many cards per round as their wallet balance allows.",
+                  },
+                  {
+                    id: "custom",
+                    title: "Custom Card Limit",
+                    desc: "Set a specific maximum number of cards (1–600).",
+                  },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setCardLimitMode(opt.id)}
+                  className={`text-left rounded-xl p-3 border transition ${
+                    cardLimitMode === opt.id
+                      ? "bg-blue-600/15 border-blue-500 text-white"
+                      : "bg-[#0a0e18] border-[#1e2742] text-gray-300 hover:border-blue-500/40"
+                  }`}
+                >
+                  <div className="text-xs font-black">{opt.title}</div>
+                  <div className="text-[11px] text-gray-400 mt-0.5">{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+
+            {cardLimitMode === "custom" && (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-bold text-gray-300 block">
+                  Max Cards Per Round (1 – 600)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={600}
+                  required
+                  value={cardLimitCustomValue}
+                  onChange={(e) => setCardLimitCustomValue(e.target.value)}
+                  className="w-full bg-[#0a0e18] border border-[#1e2742] rounded-xl px-4 py-2.5 text-sm font-black text-white"
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  {[5, 10, 20, 50, 100].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setCardLimitCustomValue(String(preset))}
+                      className="px-2.5 py-1 rounded-lg bg-[#162038] hover:bg-blue-600 text-[11px] font-bold text-gray-300 hover:text-white transition"
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setCardLimitTarget(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#1a233b] dark:hover:bg-[#243356] border border-slate-300 dark:border-transparent text-xs font-bold text-slate-700 dark:text-gray-300 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={actionLoading}
+                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white disabled:opacity-50"
+              >
+                Save Limit
               </button>
             </div>
           </form>

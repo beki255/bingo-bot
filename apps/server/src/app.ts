@@ -200,7 +200,7 @@ export function createApp() {
       };
       const telegramId = req.query.telegramId ? String(req.query.telegramId) : null;
       if (!telegramId) {
-        return res.json({ ok: true, balance: 0, phoneNumber: null, isVerified: false, ...maintenancePayload });
+        return res.json({ ok: true, balance: 0, phoneNumber: null, isVerified: false, maxCartelasOverride: null, ...maintenancePayload });
       }
       const { prisma } = await import("./db/prisma.js");
       const user = await prisma.user.findUnique({
@@ -208,7 +208,7 @@ export function createApp() {
         include: { wallet: true },
       });
       if (!user || !user.wallet) {
-        return res.json({ ok: true, balance: 0, phoneNumber: null, isVerified: false, ...maintenancePayload });
+        return res.json({ ok: true, balance: 0, phoneNumber: null, isVerified: false, maxCartelasOverride: null, ...maintenancePayload });
       }
       const balance = centsToNumber(toCents(user.wallet.balance));
       return res.json({
@@ -216,13 +216,14 @@ export function createApp() {
         balance,
         phoneNumber: user.phoneNumber,
         isVerified: Boolean(user.phoneNumber || user.role === "SUPER_ADMIN" || user.role === "CASHIER"),
+        maxCartelasOverride: user.maxCartelasOverride ?? null,
         firstName: user.firstName,
         username: user.username,
         language: user.language || "AM",
         ...maintenancePayload,
       });
     } catch (err) {
-      return res.json({ ok: true, balance: 0, phoneNumber: null, isVerified: false });
+      return res.json({ ok: true, balance: 0, phoneNumber: null, isVerified: false, maxCartelasOverride: null });
     }
   });
 

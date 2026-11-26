@@ -56,6 +56,8 @@ export default function App() {
   const [userLang, setUserLang] = useState<"AM" | "EN">(() => {
     return (localStorage.getItem("bingo_user_lang") as "AM" | "EN") || "AM";
   });
+  // Per-user cartela limit override from Admin (null = room default, 0 = unlimited, >0 = custom limit)
+  const [userMaxCardsOverride, setUserMaxCardsOverride] = useState<number | null>(null);
 
   // System Maintenance Mode (Killswitch) state synced from backend & real-time socket
   const [maintenance, setMaintenance] = useState<{
@@ -200,6 +202,11 @@ export default function App() {
           localStorage.setItem("bingo_user_verified", "false");
         }
         setHasCheckedRegistration(true);
+        if (typeof data.maxCartelasOverride === "number") {
+          setUserMaxCardsOverride(data.maxCartelasOverride);
+        } else {
+          setUserMaxCardsOverride(null);
+        }
         if (data.language) {
           setUserLang(data.language);
           localStorage.setItem("bingo_user_lang", data.language);
@@ -282,6 +289,7 @@ export default function App() {
 
   const handleSelectRoom = async (room: Room) => {
     setSelectedRoom(room);
+    handleRefreshUserData();
     const tgId = String(getTelegramId() || "");
     try {
       const res = await fetch(`${API_BASE_URL}/api/rooms/${room.id}/state`);
@@ -451,7 +459,13 @@ export default function App() {
           clientId={getTelegramId()}
           stake={selectedRoom.stakeAmount}
           minPlayers={selectedRoom.minPlayers ?? 2}
-          maxCardsPerPlayer={selectedRoom.maxCartelasPerUser ?? 2}
+          maxCardsPerPlayer={
+            userMaxCardsOverride === 0
+              ? 0
+              : typeof userMaxCardsOverride === "number" && userMaxCardsOverride > 0
+              ? userMaxCardsOverride
+              : selectedRoom.maxCartelasPerUser ?? 2
+          }
           countdownSeconds={selectedRoom.countdownSeconds ?? 30}
           cartelaPoolSize={selectedRoom.cartelaPoolSize ?? 600}
           roomName={userLang === "AM" ? selectedRoom.nameAm || selectedRoom.nameEn : selectedRoom.nameEn || selectedRoom.nameAm}

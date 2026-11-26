@@ -630,6 +630,7 @@ export function createAdminRouter() {
           isBanned: u.isBanned,
           referralCode: u.referralCode,
           welcomeBonusClaimed: u.welcomeBonusClaimed,
+          maxCartelasOverride: u.maxCartelasOverride ?? null,
           hasWebPassword: Boolean(u.passwordHash),
           balance: Number(u.wallet?.balance ?? 0),
           lockedBalance: Number(u.wallet?.lockedBalance ?? 0),
@@ -948,6 +949,48 @@ export function createAdminRouter() {
     } catch (err) {
       console.error("Update user role error:", err);
       res.status(500).json({ ok: false, error: "FAILED_UPDATE_ROLE" });
+    }
+  });
+
+  // Super Admin: configure per-user cartela limit override (null = room default, 0 = unlimited, 1..600 = custom)
+  const cardLimitSchema = z.object({
+    maxCartelasOverride: z.number().int().min(0).max(600).nullable(),
+  });
+
+  router.post("/users/:id/card-limit", requireSuperAdmin, async (req, res) => {
+    try {
+      const parsed = cardLimitSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ ok: false, error: "Card limit must be Room Default, Unlimited (0), or between 1 and 600." });
+        return;
+      }
+      const target = await prisma.user.findUnique({ where: { id: paramStr(req.params.id) } });
+      if (!target) {
+        res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
+        return;
+      }
+
+      const updated = await prisma.user.update({
+        where: { id: target.id },
+        data: { maxCartelasOverride: parsed.data.maxCartelasOverride },
+      });
+
+      await recordAuditLog(prisma, {
+        actorId: req.admin!.id,
+        actorRole: req.admin!.role,
+        action: "UPDATE_USER_CARD_LIMIT",
+        targetType: "User",
+        targetId: target.id,
+        before: { maxCartelasOverride: target.maxCartelasOverride ?? null },
+        after: { maxCartelasOverride: updated.maxCartelasOverride ?? null },
+      });
+
+      realtimeService.notifyAdminEvent({ type: "user_updated", payload: { userId: target.id } });
+
+      res.json({ ok: true, maxCartelasOverride: updated.maxCartelasOverride ?? null });
+    } catch (err) {
+      console.error("Update user card limit error:", err);
+      res.status(500).json({ ok: false, error: "FAILED_UPDATE_CARD_LIMIT" });
     }
   });
 

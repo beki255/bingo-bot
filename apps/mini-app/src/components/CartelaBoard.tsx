@@ -360,7 +360,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
       return;
     }
 
-    const maxLimit = maxCardsPerPlayer || 2;
+    const maxLimit = maxCardsPerPlayer === 0 ? Infinity : maxCardsPerPlayer || 2;
     if (selectedCards.length >= maxLimit) {
       showToast(`በአንድ ጨዋታ መምረጥ የሚችሉት እስከ ${maxLimit} ካርቴላ ብቻ ነው (Max ${maxLimit} cards)`);
       return;
@@ -427,8 +427,12 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
           {/* Watching Only Status Badge: Disappears as soon as any card is selected, reappears on unselect */}
           {isUserPlaying ? (
             <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-[11px] font-bold text-emerald-300 border border-emerald-500/30 transition-all duration-200">
-              <Check className="w-3.5 h-3.5" />
-              <span>ተጫዋች (#{activeUserCards.join(", ")})</span>
+              <Check className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                {activeUserCards.length <= 3
+                  ? `ተጫዋች (#${activeUserCards.join(", ")})`
+                  : `ተጫዋች (${activeUserCards.length} ካርቴላ)`}
+              </span>
             </div>
           ) : (
             <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-purple-600/25 text-[11px] font-bold text-purple-300 border border-purple-500/30 transition-all duration-200">
@@ -567,7 +571,7 @@ export const CartelaBoard: React.FC<CartelaBoardProps> = ({
               {/* Cartela Switcher Pills (Just like LiveGame when 2+ cards are selected) */}
               <div className="mt-3 flex items-center justify-center gap-2">
                 {selectedCards.length > 1 ? (
-                  <div className="flex flex-wrap items-center justify-center gap-1.5">
+                  <div className="flex flex-wrap items-center justify-center gap-1.5 max-h-24 overflow-y-auto px-1">
                     {selectedCards.map((cNum, idx) => (
                       <button
                         key={cNum}

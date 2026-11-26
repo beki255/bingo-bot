@@ -95,6 +95,7 @@ model User {
   referralCode        String    @unique
   referredById        String?
   welcomeBonusClaimed Boolean   @default(false)
+  maxCartelasOverride Int?
   botState            Json?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt

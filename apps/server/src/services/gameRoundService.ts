@@ -602,6 +602,19 @@ export class GameRoundService {
       return this.getRoomState(roomId);
     }
 
+    const effectiveMax =
+      user.maxCartelasOverride === 0
+        ? Infinity
+        : user.maxCartelasOverride !== null && user.maxCartelasOverride !== undefined
+        ? user.maxCartelasOverride
+        : round.room.maxCartelasPerUser ?? 2;
+    const existingUserRoundCount = await prisma.gameTicket.count({
+      where: { gameRoundId: round.id, userId: user.id },
+    });
+    if (existingUserRoundCount + cardsToBuy.length > effectiveMax) {
+      throw new Error(`MAX_CARTELAS_EXCEEDED: ${effectiveMax}`);
+    }
+
     const stakeAmount = Number(round.room.stakeAmount);
     const totalCost = cardsToBuy.length * stakeAmount;
 

@@ -202,6 +202,7 @@ export interface AdminUserRow {
   isBanned: boolean;
   referralCode: string;
   welcomeBonusClaimed: boolean;
+  maxCartelasOverride?: number | null;
   hasWebPassword: boolean;
   balance: number;
   lockedBalance: number;
