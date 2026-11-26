@@ -20,6 +20,8 @@ interface UsersViewProps {
   refreshSignal: number;
 }
 
+const ROW_LIMIT_OPTIONS = [10, 25, 50, 100, 200] as const;
+
 interface UserDetailData {
   id: string;
   telegramId: string;
@@ -65,6 +67,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ admin, refreshSignal }) =>
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState<number>(25);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "verified" | "rich" | "banned" | "staff">("all");
@@ -102,7 +105,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ admin, refreshSignal }) =>
     try {
       const qs = new URLSearchParams({
         page: String(page),
-        limit: "25",
+        limit: String(limit),
         filter,
       });
       if (search.trim()) qs.set("search", search.trim());
@@ -121,7 +124,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ admin, refreshSignal }) =>
 
   useEffect(() => {
     fetchUsers();
-  }, [page, filter, search, refreshSignal]);
+  }, [page, limit, filter, search, refreshSignal]);
 
   const openUserDetail = async (userId: string) => {
     setDetailLoading(true);
@@ -283,18 +286,37 @@ export const UsersView: React.FC<UsersViewProps> = ({ admin, refreshSignal }) =>
           ))}
         </div>
 
-        <div className="relative w-full lg:w-80">
-          <Search className="w-4 h-4 text-gray-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Search name, phone, @username, TG ID..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            className="w-full bg-[#0f1422] border border-[#1a233b] focus:border-blue-500 focus:outline-none rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-gray-500"
-          />
+        <div className="flex items-center gap-2.5 w-full lg:w-auto">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-gray-400">Rows:</span>
+            <select
+              value={limit}
+              onChange={(e) => {
+                setLimit(Number(e.target.value));
+                setPage(1);
+              }}
+              className="bg-white dark:bg-[#0f1422] border border-slate-200 dark:border-[#1a233b] focus:border-blue-500 focus:outline-none rounded-xl px-2.5 py-2 text-xs font-bold text-slate-900 dark:text-white cursor-pointer"
+            >
+              {ROW_LIMIT_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="relative flex-1 lg:w-80">
+            <Search className="w-4 h-4 text-gray-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search name, phone, @username, TG ID..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              className="w-full bg-[#0f1422] border border-[#1a233b] focus:border-blue-500 focus:outline-none rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-gray-500"
+            />
+          </div>
         </div>
       </div>
 

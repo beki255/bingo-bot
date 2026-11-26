@@ -556,7 +556,7 @@ export function createAdminRouter() {
       const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
       const filter = typeof req.query.filter === "string" ? req.query.filter : "all";
       const page = Math.max(1, Number(req.query.page || 1));
-      const limit = Math.min(100, Math.max(10, Number(req.query.limit || 25)));
+      const limit = Math.min(200, Math.max(10, Number(req.query.limit || 25)));
       const skip = (page - 1) * limit;
 
       const where: Prisma.UserWhereInput = {};
@@ -1034,6 +1034,7 @@ export function createAdminRouter() {
         ok: true,
         total,
         page,
+        limit,
         totalPages: Math.max(1, Math.ceil(total / limit)),
         deposits: deposits.map((d) => ({
           id: d.id,
@@ -1194,6 +1195,7 @@ export function createAdminRouter() {
         ok: true,
         total,
         page,
+        limit,
         totalPages: Math.max(1, Math.ceil(total / limit)),
         withdrawals: withdrawals.map((w) => ({
           id: w.id,
@@ -1477,7 +1479,7 @@ export function createAdminRouter() {
       const status = typeof req.query.status === "string" ? req.query.status.toUpperCase() : "ALL";
       const roomId = typeof req.query.roomId === "string" ? req.query.roomId.trim() : "";
       const page = Math.max(1, Number(req.query.page || 1));
-      const limit = Math.min(100, Math.max(10, Number(req.query.limit || 25)));
+      const limit = Math.min(200, Math.max(10, Number(req.query.limit || 25)));
       const skip = (page - 1) * limit;
 
       const roundInclude = {
@@ -1581,6 +1583,7 @@ export function createAdminRouter() {
         ok: true,
         total,
         page,
+        limit,
         totalPages: Math.max(1, Math.ceil(total / limit)),
         games: rounds.map((r) => {
           const winners = r.tickets
@@ -1727,6 +1730,7 @@ export function createAdminRouter() {
         ok: true,
         total,
         page,
+        limit,
         totalPages: Math.max(1, Math.ceil(total / limit)),
         transactions: txs.map((t) => ({
           id: t.id,
@@ -2273,6 +2277,7 @@ export function createAdminRouter() {
         ok: true,
         total,
         page,
+        limit,
         totalPages: Math.max(1, Math.ceil(total / limit)),
         logs: logs.map((l) => ({
           id: l.id,

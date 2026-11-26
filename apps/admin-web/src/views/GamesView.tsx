@@ -8,6 +8,8 @@ interface GamesViewProps {
   refreshSignal: number;
 }
 
+const ROW_LIMIT_OPTIONS = [10, 25, 50, 100, 200] as const;
+
 interface GameDetail {
   id: string;
   roomId?: string;
@@ -65,6 +67,7 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
   const [games, setGames] = useState<AdminGameRow[]>([]);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "LIVE" | "FINISHED" | "CANCELLED_REFUNDED">("ALL");
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState<number>(25);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
@@ -73,11 +76,21 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
 
   const detailRef = useRef<GameDetail | null>(null);
   detailRef.current = detail;
+  const statusFilterRef = useRef(statusFilter);
+  statusFilterRef.current = statusFilter;
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  const limitRef = useRef(limit);
+  limitRef.current = limit;
 
   const fetchGames = async (silent = false) => {
     if (!silent) setIsLoading(true);
     try {
-      const qs = new URLSearchParams({ status: statusFilter, page: String(page), limit: "25" });
+      const qs = new URLSearchParams({
+        status: statusFilterRef.current,
+        page: String(pageRef.current),
+        limit: String(limitRef.current),
+      });
       const res = await adminFetch(`/api/admin/games?${qs.toString()}`);
       if (res.ok) {
         setGames((prev) => {
@@ -115,7 +128,7 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
   // Initial and param change fetch
   useEffect(() => {
     fetchGames();
-  }, [statusFilter, page, refreshSignal]);
+  }, [statusFilter, page, limit, refreshSignal]);
 
   // Real-time WebSocket connection to server admin monitor
   useEffect(() => {
@@ -420,22 +433,41 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
           ))}
         </div>
 
-        {/* Live Realtime Connection Indicator */}
-        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-[#0f1422] border border-slate-200 dark:border-[#1a233b] shadow-sm">
-          <span className="relative flex h-2.5 w-2.5">
-            {isSocketConnected && (
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            )}
-            <span
-              className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
-                isSocketConnected ? "bg-emerald-500" : "bg-rose-500"
-              }`}
-            />
-          </span>
-          <span className="text-xs font-extrabold text-slate-700 dark:text-gray-300 flex items-center gap-1.5">
-            <Radio className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
-            <span>{isSocketConnected ? "Live Realtime Monitor" : "Reconnecting..."}</span>
-          </span>
+        {/* Rows selector + Live Realtime Connection Indicator */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-gray-400">Rows:</span>
+            <select
+              value={limit}
+              onChange={(e) => {
+                setLimit(Number(e.target.value));
+                setPage(1);
+              }}
+              className="bg-white dark:bg-[#0f1422] border border-slate-200 dark:border-[#1a233b] focus:border-blue-500 focus:outline-none rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-white cursor-pointer shadow-sm"
+            >
+              {ROW_LIMIT_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-[#0f1422] border border-slate-200 dark:border-[#1a233b] shadow-sm">
+            <span className="relative flex h-2.5 w-2.5">
+              {isSocketConnected && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              )}
+              <span
+                className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                  isSocketConnected ? "bg-emerald-500" : "bg-rose-500"
+                }`}
+              />
+            </span>
+            <span className="text-xs font-extrabold text-slate-700 dark:text-gray-300 flex items-center gap-1.5">
+              <Radio className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
+              <span>{isSocketConnected ? "Live Realtime Monitor" : "Reconnecting..."}</span>
+            </span>
+          </div>
         </div>
       </div>
 
@@ -601,7 +633,8 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
         {/* Pagination Bar */}
         <div className="px-4 py-3 border-t border-slate-200 dark:border-[#1a233b] bg-slate-50 dark:bg-[#0b101d] flex items-center justify-between text-xs text-slate-500 dark:text-gray-400">
           <span>
-            Total Rounds: <b className="text-slate-900 dark:text-white">{total}</b> (Page {page} of {totalPages})
+            Showing <b className="text-slate-900 dark:text-white">{games.length}</b> of{" "}
+            <b className="text-slate-900 dark:text-white">{total}</b> rounds (Page {page} of {totalPages})
           </span>
           <div className="flex items-center gap-2">
             <button
