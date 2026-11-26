@@ -1,5 +1,17 @@
 import React, { useEffect, useState, useRef } from "react";
-import { Eye, Trophy, ChevronLeft, ChevronRight, X, Radio, Clock, Sparkles } from "lucide-react";
+import {
+  Eye,
+  Trophy,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  Radio,
+  Clock,
+  Sparkles,
+  Search,
+  Calendar,
+  RotateCcw,
+} from "lucide-react";
 import { io, Socket } from "socket.io-client";
 import { adminFetch, formatDateTime, formatMoney, API_BASE } from "../api";
 import type { AdminGameRow } from "../types";
@@ -9,6 +21,32 @@ interface GamesViewProps {
 }
 
 const ROW_LIMIT_OPTIONS = [10, 25, 50, 100, 200] as const;
+type DatePreset = "all" | "today" | "yesterday" | "7d" | "custom";
+
+function formatLocalYmd(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function normalizeTimeStr(val: string, fallback: string): string {
+  const trimmed = val.trim();
+  if (!trimmed) return fallback;
+  if (/^\d{2}:\d{2}$/.test(trimmed)) {
+    return `${trimmed}:${fallback.slice(6, 8)}`;
+  }
+  if (/^\d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+  return fallback;
+}
+
+function buildIsoBound(ymd: string, hms: string, isEnd: boolean): string | undefined {
+  if (!ymd) return undefined;
+  const d = new Date(`${ymd}T${hms}${isEnd ? ".999" : ".000"}`);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
 
 interface GameDetail {
   id: string;
@@ -66,6 +104,14 @@ function sortGamesList(list: AdminGameRow[]): AdminGameRow[] {
 export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
   const [games, setGames] = useState<AdminGameRow[]>([]);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "LIVE" | "FINISHED" | "CANCELLED_REFUNDED">("ALL");
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [selectedDate, setSelectedDate] = useState<string>(() => formatLocalYmd(new Date()));
+  const [toDate, setToDate] = useState<string>(() => formatLocalYmd(new Date()));
+  const [fromTime, setFromTime] = useState<string>("");
+  const [toTime, setToTime] = useState<string>("");
+  const [search, setSearch] = useState<string>("");
+  const [debouncedSearch, setDebouncedSearch] = useState<string>("");
+  const [searchScope, setSearchScope] = useState<"all" | "winner">("all");
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState<number>(25);
   const [totalPages, setTotalPages] = useState(1);
@@ -76,21 +122,107 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
 
   const detailRef = useRef<GameDetail | null>(null);
   detailRef.current = detail;
-  const statusFilterRef = useRef(statusFilter);
-  statusFilterRef.current = statusFilter;
-  const pageRef = useRef(page);
-  pageRef.current = page;
-  const limitRef = useRef(limit);
-  limitRef.current = limit;
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const computeTimeWindow = (cfg: {
+    datePreset: DatePreset;
+    selectedDate: string;
+    toDate: string;
+    fromTime: string;
+    toTime: string;
+  }): { from?: string; to?: string } => {
+    const now = new Date();
+    const todayYmd = formatLocalYmd(now);
+    const yesterdayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const yesterdayYmd = formatLocalYmd(yesterdayDate);
+    const weekAgoDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+    const weekAgoYmd = formatLocalYmd(weekAgoDate);
+
+    const startHms = normalizeTimeStr(cfg.fromTime, "00:00:00");
+    const endHms = normalizeTimeStr(cfg.toTime, "23:59:59");
+
+    if (cfg.datePreset === "today") {
+      return {
+        from: buildIsoBound(todayYmd, startHms, false),
+        to: buildIsoBound(todayYmd, endHms, true),
+      };
+    }
+    if (cfg.datePreset === "yesterday") {
+      return {
+        from: buildIsoBound(yesterdayYmd, startHms, false),
+        to: buildIsoBound(yesterdayYmd, endHms, true),
+      };
+    }
+    if (cfg.datePreset === "7d") {
+      return {
+        from: buildIsoBound(weekAgoYmd, startHms, false),
+        to: buildIsoBound(todayYmd, endHms, true),
+      };
+    }
+    if (cfg.datePreset === "custom") {
+      const startDay = cfg.selectedDate || todayYmd;
+      const endDay = cfg.toDate || startDay;
+      return {
+        from: buildIsoBound(startDay, startHms, false),
+        to: buildIsoBound(endDay >= startDay ? endDay : startDay, endHms, true),
+      };
+    }
+    if (cfg.fromTime.trim() || cfg.toTime.trim()) {
+      return {
+        from: buildIsoBound(todayYmd, startHms, false),
+        to: buildIsoBound(todayYmd, endHms, true),
+      };
+    }
+    return {};
+  };
+
+  const filterStateRef = useRef({
+    statusFilter,
+    page,
+    limit,
+    datePreset,
+    selectedDate,
+    toDate,
+    fromTime,
+    toTime,
+    debouncedSearch,
+    searchScope,
+  });
+  filterStateRef.current = {
+    statusFilter,
+    page,
+    limit,
+    datePreset,
+    selectedDate,
+    toDate,
+    fromTime,
+    toTime,
+    debouncedSearch,
+    searchScope,
+  };
 
   const fetchGames = async (silent = false) => {
     if (!silent) setIsLoading(true);
     try {
+      const f = filterStateRef.current;
+      const { from, to } = computeTimeWindow(f);
       const qs = new URLSearchParams({
-        status: statusFilterRef.current,
-        page: String(pageRef.current),
-        limit: String(limitRef.current),
+        status: f.statusFilter,
+        page: String(f.page),
+        limit: String(f.limit),
+        datePreset: f.datePreset,
+        searchScope: f.searchScope,
       });
+      if (from) qs.set("from", from);
+      if (to) qs.set("to", to);
+      if (f.debouncedSearch) qs.set("search", f.debouncedSearch);
+
       const res = await adminFetch(`/api/admin/games?${qs.toString()}`);
       if (res.ok) {
         setGames((prev) => {
@@ -128,7 +260,19 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
   // Initial and param change fetch
   useEffect(() => {
     fetchGames();
-  }, [statusFilter, page, limit, refreshSignal]);
+  }, [
+    statusFilter,
+    page,
+    limit,
+    datePreset,
+    selectedDate,
+    toDate,
+    fromTime,
+    toTime,
+    debouncedSearch,
+    searchScope,
+    refreshSignal,
+  ]);
 
   // Real-time WebSocket connection to server admin monitor
   useEffect(() => {
@@ -204,8 +348,11 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
           index === self.findIndex((t) => t.id === item.id)
         );
 
-        // If newly created round is not yet in our table and we are on page 1, fetch silently
-        if (!matched && page === 1 && state.status !== "FINISHED") {
+        // If newly created round is not yet in our table and we are on unfiltered page 1, fetch silently
+        const f = filterStateRef.current;
+        const canInjectLive =
+          (f.datePreset === "all" || f.datePreset === "today") && !f.debouncedSearch;
+        if (!matched && f.page === 1 && canInjectLive && state.status !== "FINISHED") {
           fetchGames(true);
         }
         return sortGamesList(deduped);
@@ -469,6 +616,213 @@ export const GamesView: React.FC<GamesViewProps> = ({ refreshSignal }) => {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Date/Time & Winner Search Filters Bar */}
+      <div className="bg-white dark:bg-[#0f1422] border border-slate-200 dark:border-[#1a233b] rounded-2xl p-3.5 sm:p-4 flex flex-col gap-3 shadow-sm">
+        {/* Row A: Quick Date Presets + Search Scope + Search Input */}
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-gray-400 flex items-center gap-1 mr-1">
+              <Calendar className="w-3.5 h-3.5" />
+              Date:
+            </span>
+            {(
+              [
+                ["all", "All Time"],
+                ["today", "Today"],
+                ["yesterday", "Yesterday"],
+                ["7d", "Last 7 Days"],
+                ["custom", "Custom Day/Time"],
+              ] as const
+            ).map(([preset, label]) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => {
+                  if (preset === "custom" && !selectedDate) {
+                    const today = formatLocalYmd(new Date());
+                    setSelectedDate(today);
+                    setToDate(today);
+                  }
+                  setDatePreset(preset);
+                  setPage(1);
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                  datePreset === preset
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "bg-slate-100 dark:bg-[#131b2e] text-slate-600 dark:text-gray-300 hover:bg-slate-200 dark:hover:bg-[#1a2540]"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            {/* Search Scope Toggle */}
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#131b2e] p-1 rounded-xl shrink-0">
+              {(
+                [
+                  ["all", "All Matches"],
+                  ["winner", "Winners Only"],
+                ] as const
+              ).map(([scope, label]) => (
+                <button
+                  key={scope}
+                  type="button"
+                  onClick={() => {
+                    setSearchScope(scope);
+                    setPage(1);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+                    searchScope === scope
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-slate-600 dark:text-gray-300"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Search Input */}
+            <div className="relative flex-1 sm:w-72">
+              <Search className="w-3.5 h-3.5 text-slate-400 dark:text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder={
+                  searchScope === "winner"
+                    ? "Winner name, phone, @user, #card..."
+                    : "Winner, player, phone, #card, room, ID..."
+                }
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full bg-slate-50 dark:bg-[#0a0e18] border border-slate-200 dark:border-[#1e2742] focus:border-blue-500 focus:outline-none rounded-xl pl-8 pr-8 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-gray-500"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setDebouncedSearch("");
+                    setPage(1);
+                  }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-white"
+                  aria-label="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {(datePreset !== "all" || fromTime || toTime || search || statusFilter !== "ALL") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter("ALL");
+                  setDatePreset("all");
+                  setFromTime("");
+                  setToTime("");
+                  setSearch("");
+                  setDebouncedSearch("");
+                  setSearchScope("all");
+                  setPage(1);
+                }}
+                className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-[#131b2e] hover:bg-slate-200 dark:hover:bg-[#1a2540] border border-slate-200 dark:border-[#1e2945] text-xs font-bold text-slate-700 dark:text-gray-200 flex items-center justify-center gap-1.5 transition shrink-0"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Row B: Exact Day & Hour:Minute:Second Controls */}
+        {datePreset !== "all" && (
+          <div className="pt-2.5 border-t border-slate-100 dark:border-[#1a233b] flex flex-wrap items-center gap-3 text-xs">
+            {datePreset === "custom" && (
+              <>
+                <label className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-gray-400">From Day:</span>
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedDate(val);
+                      if (!toDate || toDate < val) setToDate(val);
+                      setPage(1);
+                    }}
+                    className="bg-slate-50 dark:bg-[#0a0e18] border border-slate-200 dark:border-[#1e2742] rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-white"
+                  />
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-slate-500 dark:text-gray-400">To Day:</span>
+                  <input
+                    type="date"
+                    value={toDate}
+                    min={selectedDate}
+                    onChange={(e) => {
+                      setToDate(e.target.value);
+                      setPage(1);
+                    }}
+                    className="bg-slate-50 dark:bg-[#0a0e18] border border-slate-200 dark:border-[#1e2742] rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-white"
+                  />
+                </label>
+              </>
+            )}
+
+            <label className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-slate-500 dark:text-gray-400">
+                From Time (HH:MM:SS):
+              </span>
+              <input
+                type="time"
+                step={1}
+                value={fromTime}
+                onChange={(e) => {
+                  setFromTime(e.target.value);
+                  setPage(1);
+                }}
+                className="bg-slate-50 dark:bg-[#0a0e18] border border-slate-200 dark:border-[#1e2742] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 dark:text-white"
+              />
+            </label>
+
+            <label className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-slate-500 dark:text-gray-400">
+                To Time (HH:MM:SS):
+              </span>
+              <input
+                type="time"
+                step={1}
+                value={toTime}
+                onChange={(e) => {
+                  setToTime(e.target.value);
+                  setPage(1);
+                }}
+                className="bg-slate-50 dark:bg-[#0a0e18] border border-slate-200 dark:border-[#1e2742] rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 dark:text-white"
+              />
+            </label>
+
+            {(fromTime || toTime) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFromTime("");
+                  setToTime("");
+                  setPage(1);
+                }}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition"
+              >
+                Clear Time
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Rounds Table */}

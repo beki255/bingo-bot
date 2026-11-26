@@ -1521,15 +1521,117 @@ export function createAdminRouter() {
     try {
       const status = typeof req.query.status === "string" ? req.query.status.toUpperCase() : "ALL";
       const roomId = typeof req.query.roomId === "string" ? req.query.roomId.trim() : "";
+      const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+      const searchScope = req.query.searchScope === "winner" ? "winner" : "all";
+      const datePreset = typeof req.query.datePreset === "string" ? req.query.datePreset : "all";
+      const fromParam = typeof req.query.from === "string" ? req.query.from.trim() : "";
+      const toParam = typeof req.query.to === "string" ? req.query.to.trim() : "";
       const page = Math.max(1, Number(req.query.page || 1));
       const limit = Math.min(200, Math.max(10, Number(req.query.limit || 25)));
       const skip = (page - 1) * limit;
+
+      let fromDt: Date | null = null;
+      let toDt: Date | null = null;
+      if (fromParam) {
+        const d = new Date(fromParam);
+        if (!Number.isNaN(d.getTime())) fromDt = d;
+      }
+      if (toParam) {
+        const d = new Date(toParam);
+        if (!Number.isNaN(d.getTime())) toDt = d;
+      }
+
+      // Fallback if preset passed directly without explicit ISO bounds (Ethiopia UTC+3)
+      if (!fromDt && !toDt && (datePreset === "today" || datePreset === "yesterday" || datePreset === "7d")) {
+        const eatOffsetMs = 3 * 3600 * 1000;
+        const dayMs = 24 * 3600 * 1000;
+        const nowEat = new Date(Date.now() + eatOffsetMs);
+        const todayStart = new Date(
+          Date.UTC(nowEat.getUTCFullYear(), nowEat.getUTCMonth(), nowEat.getUTCDate()) - eatOffsetMs
+        );
+        if (datePreset === "today") {
+          fromDt = todayStart;
+          toDt = new Date(todayStart.getTime() + dayMs - 1);
+        } else if (datePreset === "yesterday") {
+          fromDt = new Date(todayStart.getTime() - dayMs);
+          toDt = new Date(todayStart.getTime() - 1);
+        } else if (datePreset === "7d") {
+          fromDt = new Date(todayStart.getTime() - 6 * dayMs);
+          toDt = new Date(todayStart.getTime() + dayMs - 1);
+        }
+      }
+
+      const baseAndConditions: Prisma.GameRoundWhereInput[] = [];
+      if (roomId) {
+        baseAndConditions.push({ roomId });
+      }
+      if (fromDt || toDt) {
+        const dtFilter: Prisma.DateTimeFilter = {};
+        if (fromDt) dtFilter.gte = fromDt;
+        if (toDt) dtFilter.lte = toDt;
+        baseAndConditions.push({
+          OR: [
+            { endedAt: dtFilter },
+            { endedAt: null, startedAt: dtFilter },
+            { endedAt: null, startedAt: null, createdAt: dtFilter },
+          ],
+        });
+      }
+      if (search) {
+        const clean = search.replace(/^@/, "").trim();
+        const cleanId = clean.replace(/^TB/i, "").trim();
+        const cleanCardStr = clean.replace(/^#/, "").trim();
+        const numericVal = /^\d+$/.test(cleanCardStr) ? Number(cleanCardStr) : null;
+
+        const userMatchOr: Prisma.UserWhereInput[] = [
+          { firstName: { contains: clean, mode: "insensitive" } },
+          { lastName: { contains: clean, mode: "insensitive" } },
+          { username: { contains: clean, mode: "insensitive" } },
+          { phoneNumber: { contains: clean, mode: "insensitive" } },
+        ];
+        if (/^\d+$/.test(clean)) {
+          try {
+            userMatchOr.push({ telegramId: BigInt(clean) });
+          } catch {
+            // ignore out-of-range digits
+          }
+        }
+
+        if (searchScope === "winner") {
+          const winnerTicketOr: Prisma.GameTicketWhereInput[] = [{ user: { OR: userMatchOr } }];
+          if (numericVal !== null && numericVal >= 1 && numericVal <= 600) {
+            winnerTicketOr.push({ cartelaNumber: numericVal });
+          }
+          baseAndConditions.push({
+            tickets: {
+              some: {
+                status: "WINNER",
+                OR: winnerTicketOr,
+              },
+            },
+          });
+        } else {
+          const allOr: Prisma.GameRoundWhereInput[] = [
+            { id: { contains: clean, mode: "insensitive" } },
+            { room: { nameAm: { contains: clean, mode: "insensitive" } } },
+            { room: { nameEn: { contains: clean, mode: "insensitive" } } },
+            { tickets: { some: { user: { OR: userMatchOr } } } },
+          ];
+          if (cleanId && cleanId !== clean) {
+            allOr.push({ id: { contains: cleanId, mode: "insensitive" } });
+          }
+          if (numericVal !== null && numericVal >= 1 && numericVal <= 600) {
+            allOr.push({ tickets: { some: { cartelaNumber: numericVal } } });
+          }
+          baseAndConditions.push({ OR: allOr });
+        }
+      }
 
       const roundInclude = {
         room: { select: { nameAm: true, nameEn: true, stakeAmount: true, sortOrder: true } },
         tickets: {
           include: {
-            user: { select: { id: true, firstName: true, phoneNumber: true } },
+            user: { select: { id: true, firstName: true, lastName: true, phoneNumber: true } },
           },
         },
       } satisfies Prisma.GameRoundInclude;
@@ -1546,11 +1648,11 @@ export function createAdminRouter() {
         };
         const activeWhere: Prisma.GameRoundWhereInput = {
           status: activeStatuses,
-          ...(roomId ? { roomId } : {}),
+          ...(baseAndConditions.length > 0 ? { AND: baseAndConditions } : {}),
         };
         const finishedWhere: Prisma.GameRoundWhereInput = {
           status: finishedStatuses,
-          ...(roomId ? { roomId } : {}),
+          ...(baseAndConditions.length > 0 ? { AND: baseAndConditions } : {}),
         };
 
         const [activeCount, finishedCount, activeRounds] = await Promise.all([
@@ -1601,8 +1703,8 @@ export function createAdminRouter() {
         ) {
           where.status = status as Prisma.GameRoundWhereInput["status"];
         }
-        if (roomId) {
-          where.roomId = roomId;
+        if (baseAndConditions.length > 0) {
+          where.AND = baseAndConditions;
         }
 
         const isLiveQuery = status === "LIVE" || status === "WAITING" || status === "COUNTDOWN" || status === "RUNNING";
@@ -1633,7 +1735,7 @@ export function createAdminRouter() {
             .filter((t) => t.status === "WINNER")
             .map((t) => ({
               userId: t.userId,
-              userName: t.user.firstName,
+              userName: `${t.user.firstName}${t.user.lastName ? ` ${t.user.lastName}` : ""}`,
               cartelaNumber: t.cartelaNumber,
               prizeWon: Number(t.prizeWon),
             }));
